@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<launch>
+    <!-- 加载仿真世界 -->
+    <include file="$(find gazebo_ros)/launch/empty_world.launch">
+        <arg name="world_name" value="$(find track_pkg)/worlds/track_world.world"/>
+        <arg name="paused" value="false"/>
+        <arg name="use_sim_time" value="true"/>
+        <arg name="gui" value="true"/>
+        <arg name="headless" value="false"/>
+        <arg name="debug" value="false"/>
+    </include>
+
+    <!-- 加载机器人模型参数 -->
+    <param name="robot_description" command="$(find xacro)/xacro --inorder '$(find track_pkg)/urdf/follower.urdf.xacro'" />
+    <param name="leader_description" command="$(find xacro)/xacro --inorder '$(find track_pkg)/urdf/leader.urdf.xacro'" />
+
+    <!-- 生成机器人模型 -->
+    <node name="spawn_follower" pkg="gazebo_ros" type="spawn_model" 
+          args="-urdf -param robot_description -model follower_robot -x 0 -y 0 -z 0.1" />
+    <node name="spawn_leader" pkg="gazebo_ros" type="spawn_model"
+          args="-urdf -param leader_description -model leader_robot -x 2 -y 0 -z 0.1" />
+
+    <!-- 启动robot_state_publisher -->
+    <node name="robot_state_publisher" pkg="robot_state_publisher" type="robot_state_publisher" />
+</launch> 

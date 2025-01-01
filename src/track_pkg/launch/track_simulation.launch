@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<launch>
+    <!-- 启动Gazebo仿真环境 -->
+    <include file="$(find track_pkg)/launch/gazebo_simulation.launch"/>
+
+    <!-- 启动前车遥控节点 -->
+    <node pkg="teleop_twist_keyboard" type="teleop_twist_keyboard.py" name="teleop" output="screen">
+        <remap from="cmd_vel" to="leader/cmd_vel"/>
+    </node>
+
+    <!-- 启动跟踪节点 -->
+    <node pkg="track_pkg" type="follower_node" name="follower_node" output="screen">
+        <param name="max_linear_speed" value="0.5"/>
+        <param name="max_angular_speed" value="1.0"/>
+        <param name="min_distance" value="1.0"/>
+        <param name="max_distance" value="2.0"/>
+    </node>
+</launch> 
