@@ -60,8 +60,10 @@
 
         <gazebo reference="${prefix}_${suffix}_wheel">
             <material>Gazebo/Black</material>
-            <mu1>1.0</mu1>
-            <mu2>1.0</mu2>
+            <mu1>2.0</mu1>
+            <mu2>2.0</mu2>
+            <kp>1000000.0</kp>
+            <kd>100.0</kd>
         </gazebo>
     </xacro:macro>
 
@@ -100,8 +102,10 @@
             <publishOdomTF>true</publishOdomTF>
             <odometrySource>world</odometrySource>
             <updateRate>50.0</updateRate>
-            <wheelAcceleration>1.0</wheelAcceleration>
-            <wheelTorque>20.0</wheelTorque>
+            <wheelAcceleration>5.0</wheelAcceleration>
+            <wheelTorque>50.0</wheelTorque>
+            <maxVelocity>2.0</maxVelocity>
+            <maxAcceleration>2.0</maxAcceleration>
             <rosDebugLevel>Debug</rosDebugLevel>
             <legacyMode>false</legacyMode>
         </plugin>
