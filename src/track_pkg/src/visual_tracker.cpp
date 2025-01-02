@@ -7,8 +7,12 @@ VisualTracker::VisualTracker() : it_(nh_)
     depth_sub_ = it_.subscribe("/camera/depth/image_raw", 1, &VisualTracker::depthCallback, this);
     cmd_vel_pub_ = nh_.advertise<geometry_msgs::Twist>("/cmd_vel", 1);
 
-    // 初始化跟踪器
-    tracker_ = new KCFTracker(true, true, true, false);
+    // 初始化KCF跟踪器参数
+    bool HOG = true;
+    bool FIXEDWINDOW = false;
+    bool MULTISCALE = true;
+    bool LAB = true;  // 使用LAB颜色特征
+    tracker_ = new KCFTracker(HOG, FIXEDWINDOW, MULTISCALE, LAB);
 
     // 初始化状态变量
     select_flag_ = false;
@@ -17,6 +21,8 @@ VisualTracker::VisualTracker() : it_(nh_)
     target_lost_ = false;
     linear_speed_ = 0.0;
     rotation_speed_ = 0.0;
+    track_lost_frames_ = 0;
+    max_lost_frames_ = 10;  // 连续10帧未检测到目标则认为丢失
 
     // 创建窗口并设置鼠标回调
     cv::namedWindow("Tracking", cv::WINDOW_AUTOSIZE);
@@ -70,19 +76,56 @@ void VisualTracker::rgbCallback(const sensor_msgs::ImageConstPtr& msg)
         {
             if (renew_roi_)
             {
-                tracker_->init(select_rect_, rgb_image_);
-                track_rect_ = select_rect_;
-                renew_roi_ = false;
-                target_lost_ = false;
+                // 确保选择框有效
+                if (select_rect_.width > 20 && select_rect_.height > 20 && 
+                    select_rect_.width < rgb_image_.cols/2 && 
+                    select_rect_.height < rgb_image_.rows/2)
+                {
+                    tracker_->init(select_rect_, rgb_image_);
+                    track_rect_ = select_rect_;
+                    renew_roi_ = false;
+                    target_lost_ = false;
+                    track_lost_frames_ = 0;
+                }
+                else
+                {
+                    begin_track_ = false;
+                    ROS_WARN("Invalid selection size. Please select again.");
+                }
             }
             else
             {
+                cv::Rect2d old_rect = track_rect_;
                 track_rect_ = tracker_->update(rgb_image_);
-                calculateCommand();
+
+                // 检查跟踪质量
+                if (track_rect_.width <= 0 || track_rect_.height <= 0 ||
+                    track_rect_.x < 0 || track_rect_.y < 0 ||
+                    track_rect_.x + track_rect_.width > rgb_image_.cols ||
+                    track_rect_.y + track_rect_.height > rgb_image_.rows ||
+                    std::abs(track_rect_.width - old_rect.width) > old_rect.width * 0.5 ||
+                    std::abs(track_rect_.height - old_rect.height) > old_rect.height * 0.5)
+                {
+                    track_lost_frames_++;
+                    if (track_lost_frames_ > max_lost_frames_)
+                    {
+                        target_lost_ = true;
+                        stopRobot();
+                    }
+                }
+                else
+                {
+                    track_lost_frames_ = 0;
+                    target_lost_ = false;
+                    calculateCommand();
+                }
             }
 
             // 显示跟踪框
-            cv::rectangle(display_image, track_rect_, cv::Scalar(0, 255, 0), 2);
+            if (!target_lost_)
+            {
+                cv::rectangle(display_image, track_rect_, cv::Scalar(0, 255, 0), 2);
+            }
         }
         else if (select_flag_)
         {

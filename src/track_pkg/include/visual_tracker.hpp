@@ -65,6 +65,10 @@ private:
     double linear_speed_;
     double rotation_speed_;
     double target_distance_;  // 目标距离
+
+    // 新增变量
+    int track_lost_frames_;    // 连续跟踪失败的帧数
+    int max_lost_frames_;      // 最大允许连续失败帧数
 };
 
 #endif 
