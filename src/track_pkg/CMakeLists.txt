@@ -24,10 +24,28 @@ include_directories(
   ${catkin_INCLUDE_DIRS}
   ${PCL_INCLUDE_DIRS}
 )
-
 add_executable(follower_node src/follower.cpp)
 target_link_libraries(follower_node
   ${catkin_LIBRARIES}
   ${PCL_LIBRARIES}
 )
+
+# Install launch files
+install(DIRECTORY launch/
+  DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/launch
+  FILES_MATCHING PATTERN "*.launch"
+)
+
+# Install URDF files
+install(DIRECTORY urdf/
+  DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/urdf
+  FILES_MATCHING PATTERN "*.urdf.xacro"
+)
+
+# Install world files
+install(DIRECTORY worlds/
+  DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/worlds
+  FILES_MATCHING PATTERN "*.world"
+)
+
 
