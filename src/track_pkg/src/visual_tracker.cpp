@@ -213,48 +213,11 @@ void VisualTracker::stopRobot()
 
 void VisualTracker::calculateCommand()
 {
-    if (!depth_image_.empty() && !target_lost_)
+    // 如果跟踪正常进行，运动控制会在 depthCallback 中通过 updateMotionControl 处理
+    // 这里只处理异常情况
+    if (target_lost_ || depth_image_.empty())
     {
-        // 获取目标中心点的深度值
-        cv::Point center(track_rect_.x + track_rect_.width/2, track_rect_.y + track_rect_.height/2);
-        float depth = depth_image_.at<float>(center);
-
-        // 计算线速度
-        if (depth > MAX_DISTANCE)
-        {
-            linear_speed_ = MAX_LINEAR_SPEED;
-        }
-        else if (depth < MIN_DISTANCE)
-        {
-            linear_speed_ = -MAX_LINEAR_SPEED;
-        }
-        else
-        {
-            linear_speed_ = 0.0;
-        }
-
-        // 计算角速度
-        double image_center = rgb_image_.cols / 2.0;
-        double target_center = center.x;
-        double error = target_center - image_center;
-        rotation_speed_ = -K_ROTATION_SPEED * error;
-
-        // 限制角速度
-        rotation_speed_ = std::max(-MAX_ROTATION_SPEED, std::min(rotation_speed_, MAX_ROTATION_SPEED));
-
-        // 发布速度命令
-        geometry_msgs::Twist cmd_vel;
-        cmd_vel.linear.x = linear_speed_;
-        cmd_vel.angular.z = rotation_speed_;
-        cmd_vel_pub_.publish(cmd_vel);
-    }
-    else
-    {
-        // 目标丢失，停止运动
-        geometry_msgs::Twist cmd_vel;
-        cmd_vel.linear.x = 0.0;
-        cmd_vel.angular.z = 0.0;
-        cmd_vel_pub_.publish(cmd_vel);
+        stopRobot();
     }
 }
 

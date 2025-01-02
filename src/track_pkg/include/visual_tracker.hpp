@@ -39,7 +39,9 @@ private:
     void rgbCallback(const sensor_msgs::ImageConstPtr& msg);
     void depthCallback(const sensor_msgs::ImageConstPtr& msg);
 
-    // 跟踪相关
+    // 运动控制相关
+    void updateMotionControl();
+    void stopRobot();
     void calculateCommand();
     void showDebugInfo(cv::Mat& display_image);
 
@@ -62,6 +64,7 @@ private:
     // 运动控制
     double linear_speed_;
     double rotation_speed_;
+    double target_distance_;  // 目标距离
 };
 
 #endif 
