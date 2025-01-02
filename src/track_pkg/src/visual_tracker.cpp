@@ -252,7 +252,7 @@ void VisualTracker::showDebugInfo(cv::Mat& display_image)
         }
 
         // 显示跟踪框中心位置
-        if (!target_lost_ && !track_rect_.empty()) {
+        if (!target_lost_ && track_rect_.width > 0 && track_rect_.height > 0) {
             cv::Point center(track_rect_.x + track_rect_.width/2, track_rect_.y + track_rect_.height/2);
             cv::circle(display_image, center, 3, cv::Scalar(0, 255, 255), -1);
             cv::line(display_image, 
