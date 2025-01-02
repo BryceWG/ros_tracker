@@ -6,7 +6,9 @@
     <!-- 启动前车遥控节点 -->
     <node pkg="teleop_twist_keyboard" type="teleop_twist_keyboard.py" name="teleop" output="screen">
         <remap from="cmd_vel" to="leader/cmd_vel"/>
-        <param name="repeat_rate" value="10.0"/>
+        <param name="repeat_rate" value="50.0"/>
+        <param name="scale_linear" value="0.5"/>
+        <param name="scale_angular" value="1.5"/>
     </node>
 
     <!-- 启动视觉跟踪节点 -->
@@ -30,17 +32,19 @@
           args="-d $(find track_pkg)/rviz/visual_track.rviz" required="false"/>
 
     <!-- 启动RGB图像视图节点 -->
-    <node pkg="image_view" type="image_view" name="rgb_image_view">
+    <node pkg="image_view" type="image_view" name="rgb_image_view" output="screen">
         <remap from="image" to="/follower/camera/rgb/image_raw"/>
         <param name="autosize" value="true"/>
         <param name="window_name" value="RGB Image - Click and drag to select tracking target"/>
-        <param name="enable_mouse_selection" value="true"/>
+        <param name="mouse_enabled" value="true"/>
+        <param name="gui" value="true"/>
     </node>
 
     <!-- 启动深度图像视图节点 -->
-    <node pkg="image_view" type="image_view" name="depth_image_view">
+    <node pkg="image_view" type="image_view" name="depth_image_view" output="screen">
         <remap from="image" to="/follower/camera/depth/image_raw"/>
         <param name="autosize" value="true"/>
         <param name="window_name" value="Depth Image"/>
+        <param name="gui" value="true"/>
     </node>
 </launch> 

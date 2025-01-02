@@ -102,12 +102,14 @@
             <publishOdomTF>true</publishOdomTF>
             <odometrySource>world</odometrySource>
             <updateRate>100.0</updateRate>
-            <wheelAcceleration>10.0</wheelAcceleration>
-            <wheelTorque>100.0</wheelTorque>
-            <maxVelocity>2.0</maxVelocity>
-            <maxAcceleration>5.0</maxAcceleration>
-            <leftJointMaxVelocity>100.0</leftJointMaxVelocity>
-            <rightJointMaxVelocity>100.0</rightJointMaxVelocity>
+            <wheelAcceleration>20.0</wheelAcceleration>
+            <wheelTorque>200.0</wheelTorque>
+            <maxVelocity>5.0</maxVelocity>
+            <maxAcceleration>10.0</maxAcceleration>
+            <leftJointMaxVelocity>200.0</leftJointMaxVelocity>
+            <rightJointMaxVelocity>200.0</rightJointMaxVelocity>
+            <wheelSlip>0.001</wheelSlip>
+            <robotBaseFrame>base_link</robotBaseFrame>
             <rosDebugLevel>Debug</rosDebugLevel>
             <legacyMode>false</legacyMode>
         </plugin>
