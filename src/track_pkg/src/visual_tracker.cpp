@@ -223,17 +223,43 @@ void VisualTracker::calculateCommand()
 
 void VisualTracker::showDebugInfo(cv::Mat& display_image)
 {
-    std::string status = begin_track_ ? "Tracking" : "Select target";
+    // 显示跟踪状态
+    std::string status;
+    if (begin_track_) {
+        status = target_lost_ ? "Target Lost!" : "Tracking";
+    } else {
+        status = "Select target with mouse";
+    }
     cv::putText(display_image, status, cv::Point(10, 30),
-                cv::FONT_HERSHEY_SIMPLEX, 0.8, cv::Scalar(0, 255, 0), 2);
+                cv::FONT_HERSHEY_SIMPLEX, 0.8, 
+                target_lost_ ? cv::Scalar(0, 0, 255) : cv::Scalar(0, 255, 0), 2);
 
     if (begin_track_)
     {
+        // 显示运动控制信息
         std::stringstream ss;
         ss << "Speed - Linear: " << std::fixed << std::setprecision(2) << linear_speed_
-           << " Angular: " << rotation_speed_;
+           << " m/s, Angular: " << rotation_speed_ << " rad/s";
         cv::putText(display_image, ss.str(), cv::Point(10, 60),
                     cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(0, 255, 0), 2);
+
+        // 显示目标距离
+        if (!target_lost_) {
+            std::stringstream ds;
+            ds << "Target Distance: " << std::fixed << std::setprecision(2) << target_distance_ << " m";
+            cv::putText(display_image, ds.str(), cv::Point(10, 90),
+                        cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(0, 255, 0), 2);
+        }
+
+        // 显示跟踪框中心位置
+        if (!target_lost_ && !track_rect_.empty()) {
+            cv::Point center(track_rect_.x + track_rect_.width/2, track_rect_.y + track_rect_.height/2);
+            cv::circle(display_image, center, 3, cv::Scalar(0, 255, 255), -1);
+            cv::line(display_image, 
+                    cv::Point(display_image.cols/2, 0), 
+                    cv::Point(display_image.cols/2, display_image.rows), 
+                    cv::Scalar(255, 0, 0), 1);
+        }
     }
 }
 
