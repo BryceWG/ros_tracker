@@ -121,9 +121,10 @@
             <updateRate>50</updateRate>
             <wheelAcceleration>1.0</wheelAcceleration>
             <wheelTorque>20</wheelTorque>
-            <rosDebugLevel>Debug</rosDebugLevel>
             <publishOdomTF>true</publishOdomTF>
             <odometrySource>world</odometrySource>
+            <rosDebugLevel>Debug</rosDebugLevel>
+            <legacyMode>false</legacyMode>
         </plugin>
     </gazebo>
 </robot>
