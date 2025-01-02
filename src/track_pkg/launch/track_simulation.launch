@@ -4,7 +4,7 @@
     <include file="$(find track_pkg)/launch/gazebo_simulation.launch"/>
 
     <!-- 启动前车遥控节点 -->
-    <node pkg="teleop_twist_keyboard" type="teleop_twist_keyboard.py" name="teleop" output="screen" launch-prefix="xterm -e">
+    <node pkg="teleop_twist_keyboard" type="teleop_twist_keyboard.py" name="teleop" output="screen">
         <remap from="cmd_vel" to="leader/cmd_vel"/>
         <param name="repeat_rate" value="10.0"/>
         <param name="speed" value="0.5"/>
@@ -18,7 +18,4 @@
         <param name="min_distance" value="1.0"/>
         <param name="max_distance" value="2.0"/>
     </node>
-
-    <!-- 添加rostopic echo用于调试 -->
-    <node pkg="rostopic" type="rostopic" name="cmd_vel_echo" args="echo /leader/cmd_vel" output="screen"/>
 </launch> 

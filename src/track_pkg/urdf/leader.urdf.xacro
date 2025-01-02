@@ -113,22 +113,19 @@
             <wheelSeparation>${base_width}</wheelSeparation>
             <wheelDiameter>${2*wheel_radius}</wheelDiameter>
             <robotBaseFrame>base_link</robotBaseFrame>
-            <publishWheelTF>true</publishWheelTF>
-            <publishWheelJointState>true</publishWheelJointState>
             <commandTopic>leader/cmd_vel</commandTopic>
             <odometryTopic>leader/odom</odometryTopic>
             <odometryFrame>leader/odom</odometryFrame>
-            <updateRate>50</updateRate>
-            <wheelAcceleration>1.0</wheelAcceleration>
-            <wheelTorque>20</wheelTorque>
+            <robotNamespace>/</robotNamespace>
+            <publishWheelTF>true</publishWheelTF>
+            <publishWheelJointState>true</publishWheelJointState>
             <publishOdomTF>true</publishOdomTF>
             <odometrySource>world</odometrySource>
+            <updateRate>50.0</updateRate>
+            <wheelAcceleration>1.0</wheelAcceleration>
+            <wheelTorque>20.0</wheelTorque>
             <rosDebugLevel>Debug</rosDebugLevel>
             <legacyMode>false</legacyMode>
-            <alwaysOn>true</alwaysOn>
-            <updateRate>100.0</updateRate>
-            <torque>20</torque>
-            <robotNamespace>/</robotNamespace>
         </plugin>
     </gazebo>
 </robot>
