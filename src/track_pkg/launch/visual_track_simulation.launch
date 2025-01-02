@@ -5,10 +5,7 @@
          value="$(find track_pkg)/config/rosconsole.config"/>
 
     <!-- 启动Gazebo仿真环境 -->
-    <include file="$(find track_pkg)/launch/gazebo_simulation.launch">
-        <arg name="debug" value="false"/>
-        <arg name="verbose" value="false"/>
-    </include>
+    <include file="$(find track_pkg)/launch/gazebo_simulation.launch"/>
 
     <!-- 启动前车遥控节点 -->
     <node pkg="teleop_twist_keyboard" type="teleop_twist_keyboard.py" name="teleop" output="screen">
@@ -34,7 +31,7 @@
         <remap from="/cmd_vel" to="/follower/cmd_vel"/>
     </node>
 
-    <!-- 只保留一个图像显示窗口 -->
+    <!-- 启动图像显示窗口 -->
     <node pkg="image_view" type="image_view" name="rgb_image_view" output="screen">
         <remap from="image" to="/follower/camera/rgb/image_raw"/>
         <param name="autosize" value="true"/>
