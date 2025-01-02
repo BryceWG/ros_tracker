@@ -69,4 +69,4 @@ private:
     float scale_weight;
 };
 
-#endif 
+#endif
