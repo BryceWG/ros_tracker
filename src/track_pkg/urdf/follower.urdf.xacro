@@ -87,7 +87,7 @@
     <joint name="camera_joint" type="fixed">
         <parent link="base_link"/>
         <child link="camera_link"/>
-        <origin xyz="${base_length/2} 0 ${base_height/2}" rpy="0 0 0"/>
+        <origin xyz="${base_length/2} 0 ${base_height + 0.1}" rpy="-0.1 0 0"/>
     </joint>
 
     <!-- Gazebo materials -->
