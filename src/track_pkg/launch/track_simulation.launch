@@ -4,9 +4,11 @@
     <include file="$(find track_pkg)/launch/gazebo_simulation.launch"/>
 
     <!-- 启动前车遥控节点 -->
-    <node pkg="teleop_twist_keyboard" type="teleop_twist_keyboard.py" name="teleop" output="screen">
+    <node pkg="teleop_twist_keyboard" type="teleop_twist_keyboard.py" name="teleop" output="screen" launch-prefix="xterm -e">
         <remap from="cmd_vel" to="leader/cmd_vel"/>
         <param name="repeat_rate" value="10.0"/>
+        <param name="speed" value="0.5"/>
+        <param name="turn" value="1.0"/>
     </node>
 
     <!-- 启动跟踪节点 -->

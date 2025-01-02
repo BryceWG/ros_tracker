@@ -125,6 +125,10 @@
             <odometrySource>world</odometrySource>
             <rosDebugLevel>Debug</rosDebugLevel>
             <legacyMode>false</legacyMode>
+            <alwaysOn>true</alwaysOn>
+            <updateRate>100.0</updateRate>
+            <torque>20</torque>
+            <robotNamespace>/</robotNamespace>
         </plugin>
     </gazebo>
 </robot>
