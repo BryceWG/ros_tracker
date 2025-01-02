@@ -33,11 +33,14 @@
     <node pkg="image_view" type="image_view" name="rgb_image_view">
         <remap from="image" to="/follower/camera/rgb/image_raw"/>
         <param name="autosize" value="true"/>
+        <param name="window_name" value="RGB Image - Click and drag to select tracking target"/>
+        <param name="enable_mouse_selection" value="true"/>
     </node>
 
     <!-- 启动深度图像视图节点 -->
     <node pkg="image_view" type="image_view" name="depth_image_view">
         <remap from="image" to="/follower/camera/depth/image_raw"/>
         <param name="autosize" value="true"/>
+        <param name="window_name" value="Depth Image"/>
     </node>
 </launch> 

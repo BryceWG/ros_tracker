@@ -101,11 +101,13 @@
             <publishWheelJointState>true</publishWheelJointState>
             <publishOdomTF>true</publishOdomTF>
             <odometrySource>world</odometrySource>
-            <updateRate>50.0</updateRate>
-            <wheelAcceleration>5.0</wheelAcceleration>
-            <wheelTorque>50.0</wheelTorque>
+            <updateRate>100.0</updateRate>
+            <wheelAcceleration>10.0</wheelAcceleration>
+            <wheelTorque>100.0</wheelTorque>
             <maxVelocity>2.0</maxVelocity>
-            <maxAcceleration>2.0</maxAcceleration>
+            <maxAcceleration>5.0</maxAcceleration>
+            <leftJointMaxVelocity>100.0</leftJointMaxVelocity>
+            <rightJointMaxVelocity>100.0</rightJointMaxVelocity>
             <rosDebugLevel>Debug</rosDebugLevel>
             <legacyMode>false</legacyMode>
         </plugin>
