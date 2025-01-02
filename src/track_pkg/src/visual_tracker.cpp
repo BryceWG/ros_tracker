@@ -104,12 +104,111 @@ void VisualTracker::depthCallback(const sensor_msgs::ImageConstPtr& msg)
 {
     try
     {
-        depth_image_ = cv_bridge::toCvShare(msg, sensor_msgs::image_encodings::TYPE_32FC1)->image;
+        // 将深度图像转换为CV_32FC1格式
+        cv::Mat depth_image = cv_bridge::toCvShare(msg)->image;
+        
+        if (begin_track_ && !target_lost_)
+        {
+            // 获取跟踪框中心点的深度值
+            int center_x = track_rect_.x + track_rect_.width / 2;
+            int center_y = track_rect_.y + track_rect_.height / 2;
+            
+            // 计算目标区域的平均深度
+            float avg_depth = 0.0f;
+            int valid_points = 0;
+            
+            // 在目标框中心区域采样深度值
+            int sample_size = 5;
+            for(int i = -sample_size; i <= sample_size; i++)
+            {
+                for(int j = -sample_size; j <= sample_size; j++)
+                {
+                    int x = center_x + i;
+                    int y = center_y + j;
+                    
+                    if(x >= 0 && x < depth_image.cols && y >= 0 && y < depth_image.rows)
+                    {
+                        float depth = depth_image.at<float>(y, x);
+                        if(!std::isnan(depth) && depth > 0)
+                        {
+                            avg_depth += depth;
+                            valid_points++;
+                        }
+                    }
+                }
+            }
+            
+            if(valid_points > 0)
+            {
+                avg_depth /= valid_points;
+                target_distance_ = avg_depth;
+                
+                // 更新运动控制
+                updateMotionControl();
+            }
+            else
+            {
+                ROS_WARN("No valid depth measurements for target");
+                target_lost_ = true;
+                stopRobot();
+            }
+        }
     }
     catch (cv_bridge::Exception& e)
     {
-        ROS_ERROR("cv_bridge exception: %s", e.what());
+        ROS_ERROR("cv_bridge exception in depth callback: %s", e.what());
     }
+}
+
+void VisualTracker::updateMotionControl()
+{
+    // 获取参数
+    double max_linear_speed, min_linear_speed;
+    double min_distance, max_distance;
+    double max_rotation_speed, k_rotation_speed;
+    
+    nh_.param("max_linear_speed", max_linear_speed, 0.5);
+    nh_.param("min_linear_speed", min_linear_speed, 0.0);
+    nh_.param("min_distance", min_distance, 2.5);
+    nh_.param("max_distance", max_distance, 4.0);
+    nh_.param("max_rotation_speed", max_rotation_speed, 0.75);
+    nh_.param("k_rotation_speed", k_rotation_speed, 0.01);
+
+    // 计算线速度
+    if (target_distance_ < min_distance)
+    {
+        linear_speed_ = -max_linear_speed * (min_distance - target_distance_) / min_distance;
+    }
+    else if (target_distance_ > max_distance)
+    {
+        linear_speed_ = max_linear_speed * (target_distance_ - max_distance) / max_distance;
+    }
+    else
+    {
+        linear_speed_ = 0;
+    }
+
+    // 计算角速度
+    double target_center_x = track_rect_.x + track_rect_.width / 2.0;
+    double image_center_x = rgb_image_.cols / 2.0;
+    double error_x = target_center_x - image_center_x;
+    
+    rotation_speed_ = -k_rotation_speed * error_x;
+    rotation_speed_ = std::max(-max_rotation_speed, std::min(max_rotation_speed, rotation_speed_));
+
+    // 发布速度命令
+    geometry_msgs::Twist cmd_vel;
+    cmd_vel.linear.x = linear_speed_;
+    cmd_vel.angular.z = rotation_speed_;
+    cmd_vel_pub_.publish(cmd_vel);
+}
+
+void VisualTracker::stopRobot()
+{
+    geometry_msgs::Twist cmd_vel;
+    cmd_vel.linear.x = 0;
+    cmd_vel.angular.z = 0;
+    cmd_vel_pub_.publish(cmd_vel);
 }
 
 void VisualTracker::calculateCommand()
