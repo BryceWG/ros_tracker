@@ -28,16 +28,28 @@ include_directories(
   ${OpenCV_INCLUDE_DIRS}
 )
 
+add_library(${PROJECT_NAME}
+  src/kcftracker.cpp
+)
+
+target_link_libraries(${PROJECT_NAME}
+  ${catkin_LIBRARIES}
+  ${OpenCV_LIBS}
+)
+
 add_executable(visual_tracker_node 
   src/visual_tracker.cpp
 )
 
 target_link_libraries(visual_tracker_node
+  ${PROJECT_NAME}
   ${catkin_LIBRARIES}
   ${OpenCV_LIBS}
 )
 
-install(TARGETS visual_tracker_node
+install(TARGETS visual_tracker_node ${PROJECT_NAME}
+  ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+  LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 
