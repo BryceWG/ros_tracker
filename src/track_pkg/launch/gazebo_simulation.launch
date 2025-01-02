@@ -18,7 +18,7 @@
     <node name="spawn_follower" pkg="gazebo_ros" type="spawn_model" 
           args="-urdf -param robot_description -model follower_robot -x 0 -y 0 -z 0.1" />
     <node name="spawn_leader" pkg="gazebo_ros" type="spawn_model"
-          args="-urdf -param leader_description -model leader_robot -x 2 -y 0 -z 0.1" />
+          args="-urdf -param leader_description -model leader_robot -x 2 -y 0 -z 0.1 -Y 3.14159" />
 
     <!-- 启动robot_state_publisher -->
     <node name="robot_state_publisher" pkg="robot_state_publisher" type="robot_state_publisher" />
