@@ -148,50 +148,55 @@ void VisualTracker::depthCallback(const sensor_msgs::ImageConstPtr& msg)
     try
     {
         // 将深度图像转换为CV_32FC1格式
-        cv::Mat depth_image = cv_bridge::toCvShare(msg)->image;
+        depth_image_ = cv_bridge::toCvShare(msg)->image;
         
-        if (begin_track_ && !target_lost_)
+        if (!begin_track_ || target_lost_ || depth_image_.empty())
         {
-            // 获取跟踪框中心点的深度值
-            int center_x = track_rect_.x + track_rect_.width / 2;
-            int center_y = track_rect_.y + track_rect_.height / 2;
-            
-            // 计算目标区域的平均深度
-            float avg_depth = 0.0f;
-            int valid_points = 0;
-            
-            // 在目标框中心区域采样深度值
-            int sample_size = 5;
-            for(int i = -sample_size; i <= sample_size; i++)
+            return;
+        }
+
+        // 确保跟踪框在有效范围内
+        int center_x = std::min(std::max(int(track_rect_.x + track_rect_.width / 2), 0), depth_image_.cols - 1);
+        int center_y = std::min(std::max(int(track_rect_.y + track_rect_.height / 2), 0), depth_image_.rows - 1);
+        
+        // 计算采样区域的范围
+        int sample_size = 5;
+        int start_x = std::max(center_x - sample_size, 0);
+        int end_x = std::min(center_x + sample_size, depth_image_.cols - 1);
+        int start_y = std::max(center_y - sample_size, 0);
+        int end_y = std::min(center_y + sample_size, depth_image_.rows - 1);
+
+        // 计算目标区域的平均深度
+        float avg_depth = 0.0f;
+        int valid_points = 0;
+        
+        for(int y = start_y; y <= end_y; y++)
+        {
+            for(int x = start_x; x <= end_x; x++)
             {
-                for(int j = -sample_size; j <= sample_size; j++)
+                float depth = depth_image_.at<float>(y, x);
+                if(!std::isnan(depth) && depth > 0.1 && depth < 10.0)  // 添加合理的深度范围检查
                 {
-                    int x = center_x + i;
-                    int y = center_y + j;
-                    
-                    if(x >= 0 && x < depth_image.cols && y >= 0 && y < depth_image.rows)
-                    {
-                        float depth = depth_image.at<float>(y, x);
-                        if(!std::isnan(depth) && depth > 0)
-                        {
-                            avg_depth += depth;
-                            valid_points++;
-                        }
-                    }
+                    avg_depth += depth;
+                    valid_points++;
                 }
             }
+        }
+        
+        if(valid_points > 5)  // 确保有足够的有效点
+        {
+            avg_depth /= valid_points;
+            target_distance_ = avg_depth;
             
-            if(valid_points > 0)
+            // 更新运动控制
+            updateMotionControl();
+        }
+        else
+        {
+            ROS_WARN_THROTTLE(1, "Insufficient valid depth measurements (found %d points)", valid_points);
+            // 不要立即将目标设为丢失，而是继续使用上一帧的深度值
+            if(target_distance_ <= 0)
             {
-                avg_depth /= valid_points;
-                target_distance_ = avg_depth;
-                
-                // 更新运动控制
-                updateMotionControl();
-            }
-            else
-            {
-                ROS_WARN("No valid depth measurements for target");
                 target_lost_ = true;
                 stopRobot();
             }
@@ -201,10 +206,29 @@ void VisualTracker::depthCallback(const sensor_msgs::ImageConstPtr& msg)
     {
         ROS_ERROR("cv_bridge exception in depth callback: %s", e.what());
     }
+    catch (cv::Exception& e)
+    {
+        ROS_ERROR("OpenCV exception in depth callback: %s", e.what());
+    }
+    catch (std::exception& e)
+    {
+        ROS_ERROR("Standard exception in depth callback: %s", e.what());
+    }
+    catch (...)
+    {
+        ROS_ERROR("Unknown exception in depth callback");
+    }
 }
 
 void VisualTracker::updateMotionControl()
 {
+    if (target_distance_ <= 0)
+    {
+        ROS_WARN_THROTTLE(1, "Invalid target distance");
+        stopRobot();
+        return;
+    }
+
     // 获取参数
     double max_linear_speed, min_linear_speed;
     double min_distance, max_distance;
@@ -231,13 +255,23 @@ void VisualTracker::updateMotionControl()
         linear_speed_ = 0;
     }
 
+    // 限制线速度
+    linear_speed_ = std::max(-max_linear_speed, std::min(max_linear_speed, linear_speed_));
+
     // 计算角速度
-    double target_center_x = track_rect_.x + track_rect_.width / 2.0;
-    double image_center_x = rgb_image_.cols / 2.0;
-    double error_x = target_center_x - image_center_x;
-    
-    rotation_speed_ = -k_rotation_speed * error_x;
-    rotation_speed_ = std::max(-max_rotation_speed, std::min(max_rotation_speed, rotation_speed_));
+    if (!rgb_image_.empty() && track_rect_.width > 0 && track_rect_.height > 0)
+    {
+        double target_center_x = track_rect_.x + track_rect_.width / 2.0;
+        double image_center_x = rgb_image_.cols / 2.0;
+        double error_x = target_center_x - image_center_x;
+        
+        rotation_speed_ = -k_rotation_speed * error_x;
+        rotation_speed_ = std::max(-max_rotation_speed, std::min(max_rotation_speed, rotation_speed_));
+    }
+    else
+    {
+        rotation_speed_ = 0;
+    }
 
     // 发布速度命令
     geometry_msgs::Twist cmd_vel;
