@@ -9,22 +9,25 @@ using namespace std;
 // 构造函数
 KCFTracker::KCFTracker(bool hog, bool fixed_window, bool multiscale, bool lab)
 {
+    // 初始化配置参数
     HOG = hog;
     FIXED_WINDOW = fixed_window;
     MULTISCALE = multiscale;
     LAB = lab;
     
+    // 初始化跟踪状态
+    scale = 1.0f;
+    
     // 设置默认参数
-    lambda = 0.0001;
-    padding = 2.5;
-    output_sigma_factor = 0.125;
-    scale_step = 1.05;
-    scale_weight = 0.95;
-    interp_factor = 0.075;
-    sigma = 0.6;
+    lambda = 0.0001f;
+    padding = 2.5f;
+    output_sigma_factor = 0.125f;
+    scale_step = 1.05f;
+    scale_weight = 0.95f;
+    interp_factor = 0.075f;
+    sigma = 0.6f;
     cell_size = 4;
     template_size = 96;
-    scale = 1.0;
 }
 
 void KCFTracker::init(cv::Rect bbox, cv::Mat image)
@@ -36,7 +39,7 @@ void KCFTracker::init(cv::Rect bbox, cv::Mat image)
     // 提取特征并训练分类器
     Mat features;
     getFeatures(image, bbox, features);
-    train(features, 1.0);
+    train(features, 1.0f);
 }
 
 cv::Rect KCFTracker::update(cv::Mat image)
@@ -44,8 +47,8 @@ cv::Rect KCFTracker::update(cv::Mat image)
     // 提取特征
     Mat features;
     Rect search_window(
-        cvRound(pos.x - target_size.width * padding / 2.0),
-        cvRound(pos.y - target_size.height * padding / 2.0),
+        cvRound(pos.x - target_size.width * padding / 2.0f),
+        cvRound(pos.y - target_size.height * padding / 2.0f),
         cvRound(target_size.width * padding),
         cvRound(target_size.height * padding)
     );
@@ -65,8 +68,8 @@ cv::Rect KCFTracker::update(cv::Mat image)
     
     // 更新模型
     Rect new_bbox(
-        cvRound(pos.x - target_size.width * scale / 2.0),
-        cvRound(pos.y - target_size.height * scale / 2.0),
+        cvRound(pos.x - target_size.width * scale / 2.0f),
+        cvRound(pos.y - target_size.height * scale / 2.0f),
         cvRound(target_size.width * scale),
         cvRound(target_size.height * scale)
     );
@@ -190,7 +193,7 @@ cv::Mat KCFTracker::createGaussianPeak(int sizey, int sizex)
     int sxh = (sizex) / 2;
     
     float output_sigma = std::sqrt((float)sizex * sizey) / padding * output_sigma_factor;
-    float mult = -0.5 / (output_sigma * output_sigma);
+    float mult = -0.5f / (output_sigma * output_sigma);
     
     for (int i = 0; i < sizey; i++) {
         for (int j = 0; j < sizex; j++) {
@@ -205,15 +208,15 @@ cv::Mat KCFTracker::createGaussianPeak(int sizey, int sizex)
 float KCFTracker::getScale(const cv::Mat &image, const cv::Point2f &pos, const cv::Size &base_size)
 {
     vector<float> scales;
-    scales.push_back(1.0);
+    scales.push_back(1.0f);
     
     for (int i = 1; i <= 2; ++i) {
         scales.push_back(pow(scale_step, i));
-        scales.push_back(pow(1.0/scale_step, i));
+        scales.push_back(pow(1.0f/scale_step, i));
     }
     
     vector<float> responses;
-    float best_scale = 1.0;
+    float best_scale = 1.0f;
     float best_response = -1;
     
     for (float scale : scales) {
