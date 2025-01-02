@@ -1,7 +1,14 @@
 <?xml version="1.0"?>
 <launch>
+    <!-- 设置ROS日志级别 -->
+    <env name="ROSCONSOLE_CONFIG_FILE" 
+         value="$(find track_pkg)/config/rosconsole.config"/>
+
     <!-- 启动Gazebo仿真环境 -->
-    <include file="$(find track_pkg)/launch/gazebo_simulation.launch"/>
+    <include file="$(find track_pkg)/launch/gazebo_simulation.launch">
+        <arg name="debug" value="false"/>
+        <arg name="verbose" value="false"/>
+    </include>
 
     <!-- 启动前车遥控节点 -->
     <node pkg="teleop_twist_keyboard" type="teleop_twist_keyboard.py" name="teleop" output="screen">
@@ -27,24 +34,12 @@
         <remap from="/cmd_vel" to="/follower/cmd_vel"/>
     </node>
 
-    <!-- 启动RViz可视化 -->
-    <node pkg="rviz" type="rviz" name="rviz" 
-          args="-d $(find track_pkg)/rviz/visual_track.rviz" required="false"/>
-
-    <!-- 启动RGB图像视图节点 -->
+    <!-- 只保留一个图像显示窗口 -->
     <node pkg="image_view" type="image_view" name="rgb_image_view" output="screen">
         <remap from="image" to="/follower/camera/rgb/image_raw"/>
         <param name="autosize" value="true"/>
-        <param name="window_name" value="RGB Image - Click and drag to select tracking target"/>
+        <param name="window_name" value="Tracking Window"/>
         <param name="mouse_enabled" value="true"/>
-        <param name="gui" value="true"/>
-    </node>
-
-    <!-- 启动深度图像视图节点 -->
-    <node pkg="image_view" type="image_view" name="depth_image_view" output="screen">
-        <remap from="image" to="/follower/camera/depth/image_raw"/>
-        <param name="autosize" value="true"/>
-        <param name="window_name" value="Depth Image"/>
         <param name="gui" value="true"/>
     </node>
 </launch> 
