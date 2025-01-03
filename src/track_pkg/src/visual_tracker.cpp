@@ -147,17 +147,37 @@ void VisualTracker::depthCallback(const sensor_msgs::ImageConstPtr& msg)
 {
     try
     {
-        // 将深度图像转换为CV_32FC1格式
-        cv_bridge::CvImageConstPtr cv_ptr = cv_bridge::toCvShare(msg);
-        if (cv_ptr->encoding != sensor_msgs::image_encodings::TYPE_32FC1)
+        // 检查深度图像格式并进行转换
+        cv_bridge::CvImageConstPtr cv_ptr;
+        if (msg->encoding == sensor_msgs::image_encodings::TYPE_32FC1)
         {
-            ROS_ERROR("Depth image must be 32FC1 format");
+            cv_ptr = cv_bridge::toCvShare(msg);
+        }
+        else if (msg->encoding == sensor_msgs::image_encodings::TYPE_16UC1)
+        {
+            // 将16位无符号整数转换为32位浮点数
+            cv_ptr = cv_bridge::toCvShare(msg);
+            cv::Mat temp;
+            cv_ptr->image.convertTo(temp, CV_32F, 1.0/1000.0); // 转换为米为单位
+            depth_image_ = temp;
+        }
+        else
+        {
+            ROS_ERROR("Unsupported depth image encoding: %s", msg->encoding.c_str());
+            return;
+        }
+
+        if (!cv_ptr->image.empty())
+        {
+            depth_image_ = cv_ptr->image;
+        }
+        else
+        {
+            ROS_ERROR("Empty depth image received");
             return;
         }
         
-        depth_image_ = cv_ptr->image;
-        
-        if (!begin_track_ || target_lost_ || depth_image_.empty())
+        if (!begin_track_ || target_lost_)
         {
             return;
         }
@@ -172,14 +192,13 @@ void VisualTracker::depthCallback(const sensor_msgs::ImageConstPtr& msg)
             return;
         }
 
-        // 在跟踪框内采样深度值
-        std::vector<float> valid_depths;
-        valid_depths.reserve(25); // 预分配空间
-
-        // 在跟踪框中心区域采样
+        // 在跟踪框中心区域采样深度值
         int center_x = track_rect_.x + track_rect_.width / 2;
         int center_y = track_rect_.y + track_rect_.height / 2;
-        int window_size = 2; // 采样窗口大小
+        int window_size = 2;
+
+        std::vector<float> valid_depths;
+        valid_depths.reserve((2 * window_size + 1) * (2 * window_size + 1));
 
         for (int dy = -window_size; dy <= window_size; dy++)
         {
@@ -187,13 +206,11 @@ void VisualTracker::depthCallback(const sensor_msgs::ImageConstPtr& msg)
             {
                 int x = center_x + dx;
                 int y = center_y + dy;
-                
-                // 确保坐标在图像范围内
+
                 if (x >= 0 && x < depth_image_.cols && y >= 0 && y < depth_image_.rows)
                 {
                     float depth = depth_image_.at<float>(y, x);
-                    // 过滤无效深度值
-                    if (!std::isnan(depth) && !std::isinf(depth) && depth > 0.1 && depth < 10.0)
+                    if (std::isfinite(depth) && depth > 0.1 && depth < 10.0)
                     {
                         valid_depths.push_back(depth);
                     }
@@ -201,20 +218,18 @@ void VisualTracker::depthCallback(const sensor_msgs::ImageConstPtr& msg)
             }
         }
 
-        // 检查是否有足够的有效深度值
-        if (valid_depths.size() > 5)
+        if (valid_depths.size() >= 3)  // 降低有效点数要求
         {
-            // 计算中值深度（比平均值更稳定）
             std::sort(valid_depths.begin(), valid_depths.end());
-            target_distance_ = valid_depths[valid_depths.size() / 2];
-            
-            // 更新运动控制
+            target_distance_ = valid_depths[valid_depths.size() / 2];  // 使用中值
             updateMotionControl();
         }
         else
         {
             ROS_WARN_THROTTLE(1, "Insufficient valid depth measurements (found %zu points)", valid_depths.size());
-            if (target_distance_ <= 0)
+            // 不要立即停止，给跟踪器一些容错时间
+            track_lost_frames_++;
+            if (track_lost_frames_ > max_lost_frames_)
             {
                 target_lost_ = true;
                 stopRobot();
@@ -228,20 +243,14 @@ void VisualTracker::depthCallback(const sensor_msgs::ImageConstPtr& msg)
     catch (cv::Exception& e)
     {
         ROS_ERROR("OpenCV exception in depth callback: %s", e.what());
-        target_lost_ = true;
-        stopRobot();
     }
     catch (std::exception& e)
     {
         ROS_ERROR("Standard exception in depth callback: %s", e.what());
-        target_lost_ = true;
-        stopRobot();
     }
     catch (...)
     {
         ROS_ERROR("Unknown exception in depth callback");
-        target_lost_ = true;
-        stopRobot();
     }
 }
 
