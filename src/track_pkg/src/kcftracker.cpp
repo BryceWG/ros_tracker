@@ -83,57 +83,112 @@ void KCFTracker::getFeatures(const cv::Mat & image, const cv::Rect & roi, cv::Ma
 {
     Mat patch = getSubWindow(image, Point2f(roi.x + roi.width/2.0f, roi.y + roi.height/2.0f), roi.size());
     
+    // 确保patch大小正确
+    if (patch.empty()) {
+        features = Mat();
+        return;
+    }
+    
+    vector<Mat> feature_channels;
+    
     if (HOG) {
-        getHOGFeatures(patch, roi, features);
+        Mat hog_features;
+        getHOGFeatures(patch, roi, hog_features);
+        if (!hog_features.empty()) {
+            feature_channels.push_back(hog_features);
+        }
     }
     
     if (LAB) {
         Mat color_features;
         getColorFeatures(patch, roi, color_features);
-        if (features.empty()) {
-            features = color_features;
-        } else {
-            vconcat(features, color_features, features);
+        if (!color_features.empty()) {
+            feature_channels.push_back(color_features);
         }
+    }
+    
+    // 使用vector合并特征
+    if (!feature_channels.empty()) {
+        if (feature_channels.size() == 1) {
+            features = feature_channels[0];
+        } else {
+            // 确保所有特征维度匹配
+            int total_channels = 0;
+            for (const Mat& channel : feature_channels) {
+                if (channel.rows != feature_channels[0].rows || 
+                    channel.cols != feature_channels[0].cols) {
+                    features = Mat();
+                    return;
+                }
+                total_channels += channel.channels();
+            }
+            
+            // 合并特征
+            vconcat(feature_channels, features);
+        }
+    } else {
+        features = Mat();
     }
 }
 
 void KCFTracker::getHOGFeatures(const cv::Mat & image, const cv::Rect & roi, cv::Mat & features)
 {
-    // 简化版HOG特征提取
-    Mat gray;
-    if (image.channels() > 1) {
-        cvtColor(image, gray, COLOR_BGR2GRAY);
-    } else {
-        gray = image.clone();
+    try {
+        // 简化版HOG特征提取
+        Mat gray;
+        if (image.channels() > 1) {
+            cvtColor(image, gray, COLOR_BGR2GRAY);
+        } else {
+            gray = image.clone();
+        }
+        
+        // 调整大小
+        resize(gray, gray, Size(template_size, template_size));
+        
+        // 计算梯度
+        Mat dx, dy;
+        Sobel(gray, dx, CV_32F, 1, 0);
+        Sobel(gray, dy, CV_32F, 0, 1);
+        
+        // 计算梯度幅值和方向
+        Mat magnitude, angle;
+        cartToPolar(dx, dy, magnitude, angle);
+        
+        // 确保特征维度正确
+        magnitude = magnitude.reshape(1, 1);
+        features = magnitude.clone();
+    } catch (const cv::Exception& e) {
+        std::cerr << "Error in HOG feature extraction: " << e.what() << std::endl;
+        features = Mat();
     }
-    
-    // 调整大小
-    resize(gray, gray, Size(template_size, template_size));
-    
-    // 计算梯度
-    Mat dx, dy;
-    Sobel(gray, dx, CV_32F, 1, 0);
-    Sobel(gray, dy, CV_32F, 0, 1);
-    
-    // 计算梯度幅值和方向
-    Mat magnitude, angle;
-    cartToPolar(dx, dy, magnitude, angle);
-    
-    features = magnitude.reshape(1, 1);
 }
 
 void KCFTracker::getColorFeatures(const cv::Mat & image, const cv::Rect & roi, cv::Mat & features)
 {
-    Mat lab;
-    if (image.channels() == 3) {
-        cvtColor(image, lab, COLOR_BGR2Lab);
-    } else {
-        lab = image.clone();
+    try {
+        Mat lab;
+        if (image.channels() == 3) {
+            cvtColor(image, lab, COLOR_BGR2Lab);
+        } else {
+            lab = image.clone();
+        }
+        
+        resize(lab, lab, Size(template_size, template_size));
+        
+        // 分离通道并重塑
+        vector<Mat> channels;
+        split(lab, channels);
+        
+        // 重塑每个通道并合并
+        for (auto& channel : channels) {
+            channel = channel.reshape(1, 1);
+        }
+        
+        vconcat(channels, features);
+    } catch (const cv::Exception& e) {
+        std::cerr << "Error in color feature extraction: " << e.what() << std::endl;
+        features = Mat();
     }
-    
-    resize(lab, lab, Size(template_size, template_size));
-    features = lab.reshape(1, 1);
 }
 
 void KCFTracker::train(cv::Mat x, float interp_factor)

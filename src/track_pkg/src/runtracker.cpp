@@ -160,42 +160,64 @@ public:
 
     if(bRenewROI)
     {
-        if (selectRect.width <= 0 || selectRect.height <= 0 ||
-            selectRect.x < 0 || selectRect.y < 0 ||
-            selectRect.x + selectRect.width > rgbimage.cols ||
-            selectRect.y + selectRect.height > rgbimage.rows)
-        {
-            ROS_WARN("Invalid selection rectangle or out of bounds");
+        try {
+            if (selectRect.width <= 0 || selectRect.height <= 0 ||
+                selectRect.x < 0 || selectRect.y < 0 ||
+                selectRect.x + selectRect.width > rgbimage.cols ||
+                selectRect.y + selectRect.height > rgbimage.rows)
+            {
+                ROS_WARN("Invalid selection rectangle or out of bounds");
+                bRenewROI = false;
+                return;
+            }
+            ROS_INFO("Initializing tracker with ROI: x=%d, y=%d, w=%d, h=%d", 
+                     selectRect.x, selectRect.y, selectRect.width, selectRect.height);
+            
+            // 确保选择框不太小
+            if (selectRect.width < 20 || selectRect.height < 20) {
+                ROS_WARN("Selected region too small, minimum size is 20x20");
+                bRenewROI = false;
+                return;
+            }
+            
+            tracker.init(selectRect, rgbimage);
+            bBeginKCF = true;
             bRenewROI = false;
+            enable_get_depth = true;
+        } catch (const cv::Exception& e) {
+            ROS_ERROR("Error initializing tracker: %s", e.what());
+            bRenewROI = false;
+            bBeginKCF = false;
             return;
         }
-        ROS_INFO("Initializing tracker with ROI: x=%d, y=%d, w=%d, h=%d", 
-                 selectRect.x, selectRect.y, selectRect.width, selectRect.height);
-        tracker.init(selectRect, rgbimage);
-        bBeginKCF = true;
-        bRenewROI = false;
-        enable_get_depth = true;
     }
 
     if(bBeginKCF)
     {
-        result = tracker.update(rgbimage);
-        
-        // 检查跟踪框是否有效
-        if (result.width <= 0 || result.height <= 0 ||
-            result.x < 0 || result.y < 0 ||
-            result.x + result.width > rgbimage.cols ||
-            result.y + result.height > rgbimage.rows)
-        {
-            ROS_WARN("Tracking failed or out of bounds, reinitialize tracking");
+        try {
+            result = tracker.update(rgbimage);
+            
+            // 检查跟踪框是否有效
+            if (result.width <= 0 || result.height <= 0 ||
+                result.x < 0 || result.y < 0 ||
+                result.x + result.width > rgbimage.cols ||
+                result.y + result.height > rgbimage.rows)
+            {
+                ROS_WARN("Tracking failed or out of bounds, reinitialize tracking");
+                bBeginKCF = false;
+                enable_get_depth = false;
+                return;
+            }
+            
+            cv::rectangle(display_image, result, cv::Scalar(0, 255, 255), 2, 8);
+            ROS_INFO_THROTTLE(1.0, "Tracking box: x=%d, y=%d, w=%d, h=%d", 
+                             result.x, result.y, result.width, result.height);
+        } catch (const cv::Exception& e) {
+            ROS_ERROR("Error updating tracker: %s", e.what());
             bBeginKCF = false;
             enable_get_depth = false;
             return;
         }
-        
-        cv::rectangle(display_image, result, cv::Scalar(0, 255, 255), 2, 8);
-        ROS_INFO_THROTTLE(1.0, "Tracking box: x=%d, y=%d, w=%d, h=%d", 
-                         result.x, result.y, result.width, result.height);
     }
     
     if (select_flag)
@@ -203,8 +225,12 @@ public:
         cv::rectangle(display_image, selectRect, cv::Scalar(255, 0, 0), 2, 8, 0);
     }
 
-    cv::imshow(RGB_WINDOW, display_image);
-    cv::waitKey(1);
+    try {
+        cv::imshow(RGB_WINDOW, display_image);
+        cv::waitKey(1);
+    } catch (const cv::Exception& e) {
+        ROS_ERROR("Error displaying image: %s", e.what());
+    }
   }
 
   void depthCb(const sensor_msgs::ImageConstPtr& msg)
