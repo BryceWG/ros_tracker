@@ -19,13 +19,13 @@
 static const std::string RGB_WINDOW = "RGB Image window";
 static const std::string DEPTH_WINDOW = "DEPTH Image window";
 
-#define Max_linear_speed 0.5
-#define Min_linear_speed 0
-#define Min_distance 2.5
-#define Max_distance 4.0
-#define Max_depth_threshold 10.0  // 最大深度阈值（米）
-#define Min_depth_threshold 0.4   // 最小深度阈值（米）
-#define Max_rotation_speed 0.75
+#define Max_linear_speed 0.5f
+#define Min_linear_speed 0.0f
+#define Min_distance 2.5f
+#define Max_distance 4.0f
+#define Max_depth_threshold 10.0f  // 最大深度阈值（米）
+#define Min_depth_threshold 0.4f   // 最小深度阈值（米）
+#define Max_rotation_speed 0.75f
 
 float linear_speed = 0;
 float rotation_speed = 0;
