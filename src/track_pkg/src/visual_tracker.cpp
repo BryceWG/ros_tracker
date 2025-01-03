@@ -11,7 +11,7 @@ VisualTracker::VisualTracker() : it_(nh_)
     bool HOG = true;
     bool FIXEDWINDOW = false;
     bool MULTISCALE = true;
-    bool LAB = true;  // 使用LAB颜色特征
+    bool LAB = true;
     tracker_ = new KCFTracker(HOG, FIXEDWINDOW, MULTISCALE, LAB);
 
     // 初始化状态变量
@@ -22,11 +22,17 @@ VisualTracker::VisualTracker() : it_(nh_)
     linear_speed_ = 0.0;
     rotation_speed_ = 0.0;
     track_lost_frames_ = 0;
-    max_lost_frames_ = 10;  // 连续10帧未检测到目标则认为丢失
+    max_lost_frames_ = 10;
+    target_distance_ = 0.0;
 
     // 创建窗口并设置鼠标回调
     cv::namedWindow("Tracking", cv::WINDOW_AUTOSIZE);
     cv::setMouseCallback("Tracking", onMouseWrapper, this);
+
+    // 等待一段时间确保窗口创建完成
+    ros::Duration(1.0).sleep();
+    
+    ROS_INFO("Visual tracker initialized. Please select a target in the window.");
 }
 
 VisualTracker::~VisualTracker()
@@ -69,7 +75,14 @@ void VisualTracker::rgbCallback(const sensor_msgs::ImageConstPtr& msg)
 {
     try
     {
-        rgb_image_ = cv_bridge::toCvShare(msg, "bgr8")->image;
+        cv_bridge::CvImageConstPtr cv_ptr = cv_bridge::toCvShare(msg, "bgr8");
+        rgb_image_ = cv_ptr->image.clone();  // 确保深拷贝
+        
+        if (rgb_image_.empty()) {
+            ROS_WARN_THROTTLE(1, "Empty RGB image received");
+            return;
+        }
+
         cv::Mat display_image = rgb_image_.clone();
 
         if (begin_track_)
@@ -81,11 +94,18 @@ void VisualTracker::rgbCallback(const sensor_msgs::ImageConstPtr& msg)
                     select_rect_.width < rgb_image_.cols/2 && 
                     select_rect_.height < rgb_image_.rows/2)
                 {
-                    tracker_->init(select_rect_, rgb_image_);
-                    track_rect_ = select_rect_;
-                    renew_roi_ = false;
-                    target_lost_ = false;
-                    track_lost_frames_ = 0;
+                    try {
+                        tracker_->init(select_rect_, rgb_image_);
+                        track_rect_ = select_rect_;
+                        renew_roi_ = false;
+                        target_lost_ = false;
+                        track_lost_frames_ = 0;
+                        ROS_INFO("Target initialized successfully");
+                    }
+                    catch (const std::exception& e) {
+                        ROS_ERROR("Failed to initialize tracker: %s", e.what());
+                        begin_track_ = false;
+                    }
                 }
                 else
                 {
