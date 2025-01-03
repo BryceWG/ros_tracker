@@ -53,7 +53,7 @@ bool enable_get_depth = false;
 
 bool HOG = true;
 bool FIXEDWINDOW = true;
-bool MULTISCALE = true;
+bool MULTISCALE = false;  // 关闭多尺度，提高稳定性
 bool SILENT = false;
 bool LAB = true;
 
@@ -73,7 +73,14 @@ void onMouse(int event, int x, int y, int, void*)
         selectRect.width = abs(x - origin.x);   
         selectRect.height = abs(y - origin.y);
         selectRect &= cv::Rect(0, 0, rgbimage.cols, rgbimage.rows);
-        cv::rectangle(temp, selectRect, cv::Scalar(255, 0, 0), 2, 8, 0);
+        
+        // 确保选择框不会太小
+        if (selectRect.width >= 20 && selectRect.height >= 20) {
+            cv::rectangle(temp, selectRect, cv::Scalar(0, 255, 0), 2, 8, 0);  // 使用绿色表示有效的选择
+        } else {
+            cv::rectangle(temp, selectRect, cv::Scalar(0, 0, 255), 2, 8, 0);  // 使用红色表示无效的选择
+        }
+        
         cv::imshow(RGB_WINDOW, temp);
         cv::waitKey(1);
     }
@@ -87,10 +94,11 @@ void onMouse(int event, int x, int y, int, void*)
     else if (event == CV_EVENT_LBUTTONUP)
     {
         select_flag = false;
-        if (selectRect.width > 0 && selectRect.height > 0)
+        if (selectRect.width >= 20 && selectRect.height >= 20)
             bRenewROI = true;
         else
-            ROS_WARN("Invalid selection: width or height is 0");
+            ROS_WARN("Selection too small: width=%d, height=%d (minimum is 20x20)", 
+                     selectRect.width, selectRect.height);
     }
 }
 

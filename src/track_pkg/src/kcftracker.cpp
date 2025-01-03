@@ -88,12 +88,16 @@ void KCFTracker::getFeatures(const cv::Mat & image, const cv::Rect & roi, cv::Ma
         features = Mat();
         return;
     }
+
+    // 调整patch大小为模板大小
+    Mat resized_patch;
+    resize(patch, resized_patch, Size(template_size, template_size));
     
     vector<Mat> feature_channels;
     
     if (HOG) {
         Mat hog_features;
-        getHOGFeatures(patch, roi, hog_features);
+        getHOGFeatures(resized_patch, roi, hog_features);
         if (!hog_features.empty()) {
             feature_channels.push_back(hog_features);
         }
@@ -101,7 +105,7 @@ void KCFTracker::getFeatures(const cv::Mat & image, const cv::Rect & roi, cv::Ma
     
     if (LAB) {
         Mat color_features;
-        getColorFeatures(patch, roi, color_features);
+        getColorFeatures(resized_patch, roi, color_features);
         if (!color_features.empty()) {
             feature_channels.push_back(color_features);
         }
@@ -113,18 +117,20 @@ void KCFTracker::getFeatures(const cv::Mat & image, const cv::Rect & roi, cv::Ma
             features = feature_channels[0];
         } else {
             // 确保所有特征维度匹配
-            int total_channels = 0;
+            int total_rows = 0;
             for (const Mat& channel : feature_channels) {
-                if (channel.rows != feature_channels[0].rows || 
-                    channel.cols != feature_channels[0].cols) {
-                    features = Mat();
-                    return;
-                }
-                total_channels += channel.channels();
+                total_rows += channel.rows;
             }
             
-            // 合并特征
-            vconcat(feature_channels, features);
+            // 预分配内存
+            features.create(total_rows, feature_channels[0].cols, feature_channels[0].type());
+            int current_row = 0;
+            
+            // 逐行复制
+            for (const Mat& channel : feature_channels) {
+                channel.copyTo(features.rowRange(current_row, current_row + channel.rows));
+                current_row += channel.rows;
+            }
         }
     } else {
         features = Mat();
@@ -142,9 +148,6 @@ void KCFTracker::getHOGFeatures(const cv::Mat & image, const cv::Rect & roi, cv:
             gray = image.clone();
         }
         
-        // 调整大小
-        resize(gray, gray, Size(template_size, template_size));
-        
         // 计算梯度
         Mat dx, dy;
         Sobel(gray, dx, CV_32F, 1, 0);
@@ -155,8 +158,7 @@ void KCFTracker::getHOGFeatures(const cv::Mat & image, const cv::Rect & roi, cv:
         cartToPolar(dx, dy, magnitude, angle);
         
         // 确保特征维度正确
-        magnitude = magnitude.reshape(1, 1);
-        features = magnitude.clone();
+        features = magnitude.reshape(1, magnitude.rows * magnitude.cols);
     } catch (const cv::Exception& e) {
         std::cerr << "Error in HOG feature extraction: " << e.what() << std::endl;
         features = Mat();
@@ -173,18 +175,22 @@ void KCFTracker::getColorFeatures(const cv::Mat & image, const cv::Rect & roi, c
             lab = image.clone();
         }
         
-        resize(lab, lab, Size(template_size, template_size));
-        
-        // 分离通道并重塑
+        // 分离通道
         vector<Mat> channels;
         split(lab, channels);
         
-        // 重塑每个通道并合并
+        // 合并所有通道的特征
+        Mat all_features;
         for (auto& channel : channels) {
-            channel = channel.reshape(1, 1);
+            Mat reshaped = channel.reshape(1, channel.rows * channel.cols);
+            if (all_features.empty()) {
+                all_features = reshaped;
+            } else {
+                vconcat(all_features, reshaped, all_features);
+            }
         }
         
-        vconcat(channels, features);
+        features = all_features;
     } catch (const cv::Exception& e) {
         std::cerr << "Error in color feature extraction: " << e.what() << std::endl;
         features = Mat();
@@ -193,29 +199,50 @@ void KCFTracker::getColorFeatures(const cv::Mat & image, const cv::Rect & roi, c
 
 void KCFTracker::train(cv::Mat x, float interp_factor)
 {
-    Mat k = createGaussianPeak(x.rows, x.cols);
-    
-    if (tmpl.empty()) {
-        tmpl = x.clone();
-        alphaf = k.clone();
-    } else {
-        tmpl = tmpl * (1 - interp_factor) + x * interp_factor;
-        alphaf = alphaf * (1 - interp_factor) + k * interp_factor;
+    try {
+        Mat k = createGaussianPeak(x.rows, x.cols);
+        
+        if (tmpl.empty()) {
+            tmpl = x.clone();
+            alphaf = k.clone();
+        } else {
+            // 确保维度匹配
+            if (x.size() != tmpl.size()) {
+                resize(x, x, tmpl.size());
+            }
+            tmpl = tmpl * (1 - interp_factor) + x * interp_factor;
+            alphaf = alphaf * (1 - interp_factor) + k * interp_factor;
+        }
+    } catch (const cv::Exception& e) {
+        std::cerr << "Error in training: " << e.what() << std::endl;
     }
 }
 
 cv::Point2f KCFTracker::detect(cv::Mat z, cv::Mat x, float &peak_value)
 {
-    Mat k;
-    matchTemplate(z, x, k, TM_CCORR_NORMED);
-    
-    double minVal, maxVal;
-    Point minLoc, maxLoc;
-    minMaxLoc(k, &minVal, &maxVal, &minLoc, &maxLoc);
-    
-    peak_value = (float)maxVal;
-    
-    return Point2f(maxLoc.x + target_size.width/2.0f, maxLoc.y + target_size.height/2.0f);
+    try {
+        // 确保特征向量维度匹配
+        if (z.size() != x.size()) {
+            resize(z, z, x.size());
+        }
+
+        Mat k;
+        matchTemplate(z, x, k, TM_CCORR_NORMED);
+        
+        double minVal, maxVal;
+        Point minLoc, maxLoc;
+        minMaxLoc(k, &minVal, &maxVal, &minLoc, &maxLoc);
+        
+        peak_value = (float)maxVal;
+        
+        // 返回目标中心位置
+        return Point2f(pos.x + (maxLoc.x - k.cols/2) * scale,
+                      pos.y + (maxLoc.y - k.rows/2) * scale);
+    } catch (const cv::Exception& e) {
+        std::cerr << "Error in detection: " << e.what() << std::endl;
+        peak_value = 0;
+        return pos;  // 返回上一次的位置
+    }
 }
 
 cv::Mat KCFTracker::getSubWindow(const cv::Mat &image, const cv::Point2f &center, const cv::Size &size)
