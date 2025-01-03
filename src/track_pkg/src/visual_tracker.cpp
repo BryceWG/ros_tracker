@@ -1,44 +1,69 @@
 #include "visual_tracker.hpp"
 
-VisualTracker::VisualTracker() : it_(nh_)
+VisualTracker::VisualTracker() : it_(nh_), tracker_(nullptr)
 {
-    // 初始化ROS订阅和发布
-    rgb_sub_ = it_.subscribe("/camera/rgb/image_raw", 1, &VisualTracker::rgbCallback, this);
-    depth_sub_ = it_.subscribe("/camera/depth/image_raw", 1, &VisualTracker::depthCallback, this);
-    cmd_vel_pub_ = nh_.advertise<geometry_msgs::Twist>("/cmd_vel", 1);
+    try {
+        // 初始化ROS订阅和发布
+        rgb_sub_ = it_.subscribe("/camera/rgb/image_raw", 1, &VisualTracker::rgbCallback, this);
+        depth_sub_ = it_.subscribe("/camera/depth/image_raw", 1, &VisualTracker::depthCallback, this);
+        cmd_vel_pub_ = nh_.advertise<geometry_msgs::Twist>("/cmd_vel", 1);
 
-    // 初始化KCF跟踪器参数
-    bool HOG = true;
-    bool FIXEDWINDOW = false;
-    bool MULTISCALE = true;
-    bool LAB = true;
-    tracker_ = new KCFTracker(HOG, FIXEDWINDOW, MULTISCALE, LAB);
+        // 初始化状态变量
+        select_flag_ = false;
+        begin_track_ = false;
+        renew_roi_ = false;
+        target_lost_ = false;
+        linear_speed_ = 0.0;
+        rotation_speed_ = 0.0;
+        track_lost_frames_ = 0;
+        max_lost_frames_ = 10;
+        target_distance_ = 0.0;
 
-    // 初始化状态变量
-    select_flag_ = false;
-    begin_track_ = false;
-    renew_roi_ = false;
-    target_lost_ = false;
-    linear_speed_ = 0.0;
-    rotation_speed_ = 0.0;
-    track_lost_frames_ = 0;
-    max_lost_frames_ = 10;
-    target_distance_ = 0.0;
+        // 等待一段时间确保ROS系统完全初始化
+        ros::Duration(0.5).sleep();
 
-    // 创建窗口并设置鼠标回调
-    cv::namedWindow("Tracking", cv::WINDOW_AUTOSIZE);
-    cv::setMouseCallback("Tracking", onMouseWrapper, this);
+        // 初始化KCF跟踪器参数
+        bool HOG = true;
+        bool FIXEDWINDOW = false;
+        bool MULTISCALE = true;
+        bool LAB = true;
+        tracker_ = new KCFTracker(HOG, FIXEDWINDOW, MULTISCALE, LAB);
 
-    // 等待一段时间确保窗口创建完成
-    ros::Duration(1.0).sleep();
-    
-    ROS_INFO("Visual tracker initialized. Please select a target in the window.");
+        // 创建窗口并设置鼠标回调
+        cv::destroyAllWindows();  // 确保没有残留的窗口
+        cv::namedWindow("Tracking", cv::WINDOW_NORMAL);
+        cv::resizeWindow("Tracking", 640, 480);
+        cv::setMouseCallback("Tracking", onMouseWrapper, this);
+        
+        ROS_INFO("Visual tracker initialized. Please select a target in the window.");
+    }
+    catch (const std::exception& e) {
+        ROS_ERROR("Error in constructor: %s", e.what());
+        throw;
+    }
 }
 
 VisualTracker::~VisualTracker()
 {
-    delete tracker_;
-    cv::destroyAllWindows();
+    try {
+        // 停止机器人
+        stopRobot();
+        
+        // 清理跟踪器
+        if (tracker_) {
+            delete tracker_;
+            tracker_ = nullptr;
+        }
+        
+        // 清理窗口
+        cv::setMouseCallback("Tracking", nullptr, nullptr);
+        cv::destroyAllWindows();
+        
+        ROS_INFO("Visual tracker cleaned up successfully");
+    }
+    catch (const std::exception& e) {
+        ROS_ERROR("Error in destructor: %s", e.what());
+    }
 }
 
 void VisualTracker::onMouseWrapper(int event, int x, int y, int flags, void* userdata)
@@ -73,16 +98,20 @@ void VisualTracker::onMouse(int event, int x, int y, int flags)
 
 void VisualTracker::rgbCallback(const sensor_msgs::ImageConstPtr& msg)
 {
+    if (!tracker_) {
+        ROS_ERROR("Tracker not initialized");
+        return;
+    }
+
     try
     {
         cv_bridge::CvImageConstPtr cv_ptr = cv_bridge::toCvShare(msg, "bgr8");
-        rgb_image_ = cv_ptr->image.clone();  // 确保深拷贝
-        
-        if (rgb_image_.empty()) {
+        if (!cv_ptr || cv_ptr->image.empty()) {
             ROS_WARN_THROTTLE(1, "Empty RGB image received");
             return;
         }
 
+        rgb_image_ = cv_ptr->image.clone();
         cv::Mat display_image = rgb_image_.clone();
 
         if (begin_track_)
@@ -115,29 +144,36 @@ void VisualTracker::rgbCallback(const sensor_msgs::ImageConstPtr& msg)
             }
             else
             {
-                cv::Rect2d old_rect = track_rect_;
-                track_rect_ = tracker_->update(rgb_image_);
+                try {
+                    cv::Rect2d old_rect = track_rect_;
+                    track_rect_ = tracker_->update(rgb_image_);
 
-                // 检查跟踪质量
-                if (track_rect_.width <= 0 || track_rect_.height <= 0 ||
-                    track_rect_.x < 0 || track_rect_.y < 0 ||
-                    track_rect_.x + track_rect_.width > rgb_image_.cols ||
-                    track_rect_.y + track_rect_.height > rgb_image_.rows ||
-                    std::abs(track_rect_.width - old_rect.width) > old_rect.width * 0.5 ||
-                    std::abs(track_rect_.height - old_rect.height) > old_rect.height * 0.5)
-                {
-                    track_lost_frames_++;
-                    if (track_lost_frames_ > max_lost_frames_)
+                    // 检查跟踪质量
+                    if (track_rect_.width <= 0 || track_rect_.height <= 0 ||
+                        track_rect_.x < 0 || track_rect_.y < 0 ||
+                        track_rect_.x + track_rect_.width > rgb_image_.cols ||
+                        track_rect_.y + track_rect_.height > rgb_image_.rows ||
+                        std::abs(track_rect_.width - old_rect.width) > old_rect.width * 0.5 ||
+                        std::abs(track_rect_.height - old_rect.height) > old_rect.height * 0.5)
                     {
-                        target_lost_ = true;
-                        stopRobot();
+                        track_lost_frames_++;
+                        if (track_lost_frames_ > max_lost_frames_)
+                        {
+                            target_lost_ = true;
+                            stopRobot();
+                        }
+                    }
+                    else
+                    {
+                        track_lost_frames_ = 0;
+                        target_lost_ = false;
+                        calculateCommand();
                     }
                 }
-                else
-                {
-                    track_lost_frames_ = 0;
-                    target_lost_ = false;
-                    calculateCommand();
+                catch (const std::exception& e) {
+                    ROS_ERROR("Error during tracking update: %s", e.what());
+                    target_lost_ = true;
+                    stopRobot();
                 }
             }
 
@@ -155,11 +191,19 @@ void VisualTracker::rgbCallback(const sensor_msgs::ImageConstPtr& msg)
 
         showDebugInfo(display_image);
         cv::imshow("Tracking", display_image);
-        cv::waitKey(1);
+        int key = cv::waitKey(1);
+        if (key == 27) // ESC键
+        {
+            ros::shutdown();
+        }
     }
-    catch (cv_bridge::Exception& e)
+    catch (const cv_bridge::Exception& e)
     {
         ROS_ERROR("cv_bridge exception: %s", e.what());
+    }
+    catch (const std::exception& e)
+    {
+        ROS_ERROR("Exception in rgbCallback: %s", e.what());
     }
 }
 
