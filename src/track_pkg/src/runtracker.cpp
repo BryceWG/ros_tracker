@@ -325,14 +325,14 @@ public:
                 linear_speed = 0;
             }
 
-            linear_speed = std::max(-Max_linear_speed, std::min(linear_speed, Max_linear_speed));
+            linear_speed = std::max(-static_cast<float>(Max_linear_speed), std::min(linear_speed, static_cast<float>(Max_linear_speed)));
             
             // 计算角速度
             int center_x = result.x + result.width/2;
             float target_center = depthimage.cols / 2.0f;
             float angle_error = (center_x - target_center) / target_center;
             rotation_speed = -angle_error * Max_rotation_speed;
-            rotation_speed = std::max(-Max_rotation_speed, std::min(rotation_speed, Max_rotation_speed));
+            rotation_speed = std::max(-static_cast<float>(Max_rotation_speed), std::min(rotation_speed, static_cast<float>(Max_rotation_speed)));
             
             ROS_INFO_THROTTLE(1.0, "Control: linear=%.3f m/s, angular=%.3f rad/s", linear_speed, rotation_speed);
         } else {
