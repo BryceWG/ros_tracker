@@ -12,6 +12,7 @@
 
 #include <opencv2/core/core.hpp>
 #include <opencv2/highgui/highgui.hpp>
+#include <opencv2/imgproc/imgproc.hpp>
 
 #include "kcftracker.hpp"
 
@@ -65,11 +66,16 @@ void onMouse(int event, int x, int y, int, void*)
 {
     if (select_flag)
     {
+        cv::Mat temp;
+        rgbimage.copyTo(temp);
         selectRect.x = MIN(origin.x, x);        
         selectRect.y = MIN(origin.y, y);
         selectRect.width = abs(x - origin.x);   
         selectRect.height = abs(y - origin.y);
         selectRect &= cv::Rect(0, 0, rgbimage.cols, rgbimage.rows);
+        cv::rectangle(temp, selectRect, cv::Scalar(255, 0, 0), 2, 8, 0);
+        cv::imshow(RGB_WINDOW, temp);
+        cv::waitKey(1);
     }
     if (event == CV_EVENT_LBUTTONDOWN)
     {
@@ -81,7 +87,10 @@ void onMouse(int event, int x, int y, int, void*)
     else if (event == CV_EVENT_LBUTTONUP)
     {
         select_flag = false;
-        bRenewROI = true;
+        if (selectRect.width > 0 && selectRect.height > 0)
+            bRenewROI = true;
+        else
+            ROS_WARN("Invalid selection: width or height is 0");
     }
 }
 
@@ -98,15 +107,25 @@ public:
   ImageConverter()
     : it_(nh_)
   {
-    // Subscrive to input video feed and publish output video feed
+    // 先创建窗口
+    cv::namedWindow(RGB_WINDOW, cv::WINDOW_NORMAL);  // 改为NORMAL允许调整大小
+    cv::namedWindow(DEPTH_WINDOW, cv::WINDOW_NORMAL);
+    
+    // 设置鼠标回调
+    cv::setMouseCallback(RGB_WINDOW, onMouse, 0);
+
+    // 订阅话题
     image_sub_ = it_.subscribe("/follower/camera/rgb/image_raw", 1, 
       &ImageConverter::imageCb, this);
     depth_sub_ = it_.subscribe("/follower/camera/depth/image_raw", 1, 
       &ImageConverter::depthCb, this);
     pub = nh_.advertise<geometry_msgs::Twist>("cmd_vel", 1000);
 
-    cv::namedWindow(RGB_WINDOW);
-    cv::namedWindow(DEPTH_WINDOW);
+    // 调整窗口大小和位置
+    cv::resizeWindow(RGB_WINDOW, 800, 600);
+    cv::resizeWindow(DEPTH_WINDOW, 800, 600);
+    cv::moveWindow(RGB_WINDOW, 100, 100);
+    cv::moveWindow(DEPTH_WINDOW, 950, 100);
   }
 
   ~ImageConverter()
@@ -136,7 +155,8 @@ public:
         return;
     }
 
-    cv::setMouseCallback(RGB_WINDOW, onMouse, 0);
+    cv::Mat display_image;
+    rgbimage.copyTo(display_image);
 
     if(bRenewROI)
     {
@@ -157,14 +177,17 @@ public:
     if(bBeginKCF)
     {
         result = tracker.update(rgbimage);
-        cv::rectangle(rgbimage, result, cv::Scalar(0, 255, 255), 1, 8);
+        cv::rectangle(display_image, result, cv::Scalar(0, 255, 255), 2, 8);
         ROS_INFO_THROTTLE(1.0, "Tracking box: x=%d, y=%d, w=%d, h=%d", 
                          result.x, result.y, result.width, result.height);
     }
-    else
-        cv::rectangle(rgbimage, selectRect, cv::Scalar(255, 0, 0), 2, 8, 0);
+    
+    if (select_flag)
+    {
+        cv::rectangle(display_image, selectRect, cv::Scalar(255, 0, 0), 2, 8, 0);
+    }
 
-    cv::imshow(RGB_WINDOW, rgbimage);
+    cv::imshow(RGB_WINDOW, display_image);
     cv::waitKey(1);
   }
 
