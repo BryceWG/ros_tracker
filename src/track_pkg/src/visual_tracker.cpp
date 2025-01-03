@@ -3,11 +3,6 @@
 VisualTracker::VisualTracker() : it_(nh_), tracker_(nullptr)
 {
     try {
-        // 初始化ROS订阅和发布
-        rgb_sub_ = it_.subscribe("/camera/rgb/image_raw", 1, &VisualTracker::rgbCallback, this);
-        depth_sub_ = it_.subscribe("/camera/depth/image_raw", 1, &VisualTracker::depthCallback, this);
-        cmd_vel_pub_ = nh_.advertise<geometry_msgs::Twist>("/cmd_vel", 1);
-
         // 初始化状态变量
         select_flag_ = false;
         begin_track_ = false;
@@ -29,24 +24,23 @@ VisualTracker::VisualTracker() : it_(nh_), tracker_(nullptr)
         bool LAB = true;
         tracker_ = new KCFTracker(HOG, FIXEDWINDOW, MULTISCALE, LAB);
 
-        // 确保DISPLAY环境变量已设置
-        if (getenv("DISPLAY") == nullptr) {
-            ROS_ERROR("DISPLAY environment variable not set");
-            throw std::runtime_error("DISPLAY not set");
-        }
-
         // 创建窗口并设置鼠标回调
         try {
-            cv::destroyWindow("Tracking");  // 只清理特定窗口
+            cv::destroyWindow("Tracking");
             cv::namedWindow("Tracking", cv::WINDOW_NORMAL);
             cv::resizeWindow("Tracking", 640, 480);
             cv::setMouseCallback("Tracking", onMouseWrapper, this);
-            cv::waitKey(1);  // 给窗口系统一些时间来创建窗口
+            cv::waitKey(100);  // 给更多时间让窗口系统创建窗口
         }
         catch (const cv::Exception& e) {
             ROS_ERROR("Failed to create OpenCV window: %s", e.what());
             throw;
         }
+
+        // 最后初始化ROS订阅，确保其他组件都准备好
+        rgb_sub_ = it_.subscribe("/camera/rgb/image_raw", 1, &VisualTracker::rgbCallback, this);
+        depth_sub_ = it_.subscribe("/camera/depth/image_raw", 1, &VisualTracker::depthCallback, this);
+        cmd_vel_pub_ = nh_.advertise<geometry_msgs::Twist>("/cmd_vel", 1);
         
         ROS_INFO("Visual tracker initialized. Please select a target in the window.");
     }
@@ -118,19 +112,24 @@ void VisualTracker::rgbCallback(const sensor_msgs::ImageConstPtr& msg)
 
     try
     {
+        // 使用共享指针避免不必要的拷贝
         cv_bridge::CvImageConstPtr cv_ptr = cv_bridge::toCvShare(msg, "bgr8");
         if (!cv_ptr || cv_ptr->image.empty()) {
             ROS_WARN_THROTTLE(1, "Empty RGB image received");
             return;
         }
 
-        rgb_image_ = cv_ptr->image.clone();
-        cv::Mat display_image = rgb_image_.clone();
+        // 创建显示图像的副本
+        cv::Mat display_image;
+        cv_ptr->image.copyTo(display_image);
 
         // 确保图像大小合适
-        if (display_image.cols > 1920 || display_image.rows > 1080) {
+        if (display_image.cols > 1280 || display_image.rows > 720) {
             cv::resize(display_image, display_image, cv::Size(1280, 720));
         }
+
+        // 保存原始图像用于跟踪
+        rgb_image_ = cv_ptr->image;
 
         if (begin_track_)
         {
@@ -196,7 +195,7 @@ void VisualTracker::rgbCallback(const sensor_msgs::ImageConstPtr& msg)
             }
 
             // 显示跟踪框
-            if (!target_lost_)
+            if (!target_lost_ && track_rect_.width > 0 && track_rect_.height > 0)
             {
                 cv::rectangle(display_image, track_rect_, cv::Scalar(0, 255, 0), 2);
             }
@@ -208,17 +207,25 @@ void VisualTracker::rgbCallback(const sensor_msgs::ImageConstPtr& msg)
         }
 
         // 添加提示信息
-        cv::putText(display_image, "Press ESC to exit", cv::Point(10, display_image.rows - 20),
-                    cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 255, 0), 1);
+        cv::putText(display_image, "Press ESC to exit", cv::Point(10, 30),
+                    cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(0, 255, 0), 2);
+        
+        if (!begin_track_) {
+            cv::putText(display_image, "Click and drag to select target", 
+                       cv::Point(10, 60), cv::FONT_HERSHEY_SIMPLEX, 0.7, 
+                       cv::Scalar(0, 255, 0), 2);
+        }
 
         showDebugInfo(display_image);
         
         try {
-            cv::imshow("Tracking", display_image);
-            int key = cv::waitKey(1);
-            if (key == 27) // ESC键
-            {
-                ros::shutdown();
+            if (!display_image.empty()) {
+                cv::imshow("Tracking", display_image);
+                char key = cv::waitKey(30);  // 增加等待时间
+                if (key == 27) // ESC键
+                {
+                    ros::shutdown();
+                }
             }
         }
         catch (const cv::Exception& e) {
