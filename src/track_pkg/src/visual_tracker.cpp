@@ -147,19 +147,29 @@ void VisualTracker::depthCallback(const sensor_msgs::ImageConstPtr& msg)
 {
     try
     {
-        // 检查深度图像格式并进行转换
         cv_bridge::CvImageConstPtr cv_ptr;
+        
+        // 检查深度图像格式并进行转换
         if (msg->encoding == sensor_msgs::image_encodings::TYPE_32FC1)
         {
             cv_ptr = cv_bridge::toCvShare(msg);
+            depth_image_ = cv_ptr->image;
         }
         else if (msg->encoding == sensor_msgs::image_encodings::TYPE_16UC1)
         {
-            // 将16位无符号整数转换为32位浮点数
             cv_ptr = cv_bridge::toCvShare(msg);
             cv::Mat temp;
             cv_ptr->image.convertTo(temp, CV_32F, 1.0/1000.0); // 转换为米为单位
             depth_image_ = temp;
+        }
+        else if (msg->encoding == sensor_msgs::image_encodings::RGB8 ||
+                msg->encoding == sensor_msgs::image_encodings::BGR8)
+        {
+            // 如果收到RGB格式的深度图像，先转换为灰度图
+            cv_ptr = cv_bridge::toCvShare(msg, sensor_msgs::image_encodings::BGR8);
+            cv::Mat gray;
+            cv::cvtColor(cv_ptr->image, gray, CV_BGR2GRAY);
+            gray.convertTo(depth_image_, CV_32F, 1.0/255.0); // 将灰度值归一化到0-1范围
         }
         else
         {

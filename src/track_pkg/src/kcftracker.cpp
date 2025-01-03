@@ -83,17 +83,29 @@ void KCFTracker::getFeatures(const cv::Mat & image, const cv::Rect & roi, cv::Ma
 {
     Mat patch = getSubWindow(image, Point2f(roi.x + roi.width/2.0f, roi.y + roi.height/2.0f), roi.size());
     
+    // 调整图像大小
+    Mat resized_patch;
+    resize(patch, resized_patch, Size(template_size, template_size));
+    
     if (HOG) {
-        getHOGFeatures(patch, roi, features);
+        Mat hog_features;
+        getHOGFeatures(resized_patch, roi, hog_features);
+        features = hog_features;
     }
     
     if (LAB) {
         Mat color_features;
-        getColorFeatures(patch, roi, color_features);
+        getColorFeatures(resized_patch, roi, color_features);
         if (features.empty()) {
             features = color_features;
         } else {
-            vconcat(features, color_features, features);
+            // 确保特征矩阵具有相同的列数
+            if (color_features.cols != features.cols) {
+                resize(color_features, color_features, Size(features.cols, color_features.rows));
+            }
+            Mat combined_features;
+            vconcat(features, color_features, combined_features);
+            features = combined_features;
         }
     }
 }
