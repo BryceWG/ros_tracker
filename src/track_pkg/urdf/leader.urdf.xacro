@@ -17,9 +17,7 @@
             <geometry>
                 <box size="${base_length} ${base_width} ${base_height}"/>
             </geometry>
-            <material name="bright_blue">
-                <color rgba="0 0.5 1 1"/>
-            </material>
+            <material name="Gazebo/Blue"/>
         </visual>
         <collision>
             <geometry>
@@ -38,9 +36,7 @@
             <geometry>
                 <box size="${marker_thickness} ${marker_width} ${marker_height}"/>
             </geometry>
-            <material name="checker_pattern">
-                <color rgba="1 1 0 1"/>  <!-- 黄色，更容易被识别 -->
-            </material>
+            <material name="Gazebo/Yellow"/>
         </visual>
         <collision>
             <geometry>
@@ -66,9 +62,7 @@
             <geometry>
                 <box size="${marker_width} ${marker_width} ${marker_thickness}"/>
             </geometry>
-            <material name="pattern">
-                <color rgba="1 0.8 0 1"/>  <!-- 金黄色 -->
-            </material>
+            <material name="Gazebo/Yellow"/>
         </visual>
         <inertial>
             <mass value="0.01"/>
@@ -90,9 +84,7 @@
                 <geometry>
                     <cylinder radius="${wheel_radius}" length="${wheel_width}"/>
                 </geometry>
-                <material name="black">
-                    <color rgba="0 0 0 1"/>
-                </material>
+                <material name="Gazebo/Black"/>
             </visual>
             <collision>
                 <geometry>
