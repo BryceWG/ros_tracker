@@ -197,7 +197,7 @@ public:
         return;
     }
 
-    if(enable_get_depth && !result.empty())
+    if(enable_get_depth && (result.width > 0 && result.height > 0))
     {
         // 添加边界检查
         if (result.x < 0 || result.y < 0 || 
@@ -241,15 +241,19 @@ public:
         }
 
         //calculate linear speed
-        if(distance > Min_distance)
+        if(distance > Min_distance) {
             linear_speed = (distance-Min_distance) * k_linear_speed + h_linear_speed;
-        if(distance < Min_distance)
+        } else if(distance < Min_distance) {
             linear_speed = (distance-Min_distance) *2* k_linear_speed - h_linear_speed;
-        else
+        } else {
             linear_speed = 0;
+        }
 
-        if(linear_speed > Max_linear_speed)
+        if(linear_speed > Max_linear_speed) {
             linear_speed = Max_linear_speed;
+        } else if(linear_speed < -Max_linear_speed) {  // 添加反向速度限制
+            linear_speed = -Max_linear_speed;
+        }
 
         //calculate rotation speed
         int center_x = result.x + result.width/2;
