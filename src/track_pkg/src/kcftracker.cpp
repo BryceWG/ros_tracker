@@ -234,10 +234,16 @@ cv::Point2f KCFTracker::detect(cv::Mat z, cv::Mat x, float &peak_value)
         minMaxLoc(k, &minVal, &maxVal, &minLoc, &maxLoc);
         
         peak_value = (float)maxVal;
+
+        // 计算搜索窗口的中心
+        Point2f search_center(pos.x, pos.y);
         
-        // 返回目标中心位置
-        return Point2f(pos.x + (maxLoc.x - k.cols/2) * scale,
-                      pos.y + (maxLoc.y - k.rows/2) * scale);
+        // 计算相对位移
+        float dx = (maxLoc.x - k.cols/2.0f) * (target_size.width * padding / template_size);
+        float dy = (maxLoc.y - k.rows/2.0f) * (target_size.height * padding / template_size);
+        
+        // 返回新的目标中心位置
+        return Point2f(search_center.x + dx, search_center.y + dy);
     } catch (const cv::Exception& e) {
         std::cerr << "Error in detection: " << e.what() << std::endl;
         peak_value = 0;

@@ -23,6 +23,8 @@ static const std::string DEPTH_WINDOW = "DEPTH Image window";
 #define Min_linear_speed 0
 #define Min_distance 2.5
 #define Max_distance 4.0
+#define Max_depth_threshold 10.0  // 最大深度阈值（米）
+#define Min_depth_threshold 0.4   // 最小深度阈值（米）
 #define Max_rotation_speed 0.75
 
 float linear_speed = 0;
@@ -257,10 +259,16 @@ public:
             ROS_INFO_ONCE("Using 32FC1 depth encoding");
         }
         
+        // 对深度图像进行阈值处理
+        cv::threshold(depthimage, depthimage, Max_depth_threshold, Max_depth_threshold, cv::THRESH_TRUNC);
+        cv::threshold(depthimage, depthimage, Min_depth_threshold, Min_depth_threshold, cv::THRESH_TOZERO);
+        
         if (!depthimage.empty()) {
-            ROS_INFO_THROTTLE(1.0, "Depth image received. Size: %dx%d, Type: %d", 
-                            depthimage.rows, depthimage.cols, depthimage.type());
-            cv::imshow(DEPTH_WINDOW, depthimage * 0.1);  // 显示深度图像
+            // 创建用于显示的深度图像
+            cv::Mat display_depth;
+            depthimage.convertTo(display_depth, CV_8UC1, 255.0/Max_depth_threshold);
+            cv::applyColorMap(display_depth, display_depth, cv::COLORMAP_JET);
+            cv::imshow(DEPTH_WINDOW, display_depth);
             cv::waitKey(1);
         }
     }
@@ -283,91 +291,56 @@ public:
 
         // 获取深度值并进行有效性检查
         bool valid_depth = true;
-        for(int i = 0; i < 5; i++) {
-            int y = (i < 2) ? result.y + result.height/3 : 
-                   (i < 4) ? result.y + 2*result.height/3 : 
-                            result.y + result.height/2;
-            int x = (i % 2 == 0) ? result.x + result.width/3 : 
-                   (i % 2 == 1) ? result.x + 2*result.width/3 : 
-                                 result.x + result.width/2;
+        float sum_depth = 0;
+        int valid_count = 0;
+        
+        // 在目标框内采样多个点
+        const int sample_rows = 3;
+        const int sample_cols = 3;
+        for(int i = 0; i < sample_rows; i++) {
+            for(int j = 0; j < sample_cols; j++) {
+                int y = result.y + (i + 1) * result.height / (sample_rows + 1);
+                int x = result.x + (j + 1) * result.width / (sample_cols + 1);
+                
+                float depth = depthimage.at<float>(y, x);
+                if (!std::isnan(depth) && !std::isinf(depth) && 
+                    depth >= Min_depth_threshold && depth <= Max_depth_threshold) {
+                    sum_depth += depth;
+                    valid_count++;
+                    ROS_INFO_THROTTLE(1.0, "Valid depth at (%d,%d): %.3f meters", x, y, depth);
+                }
+            }
+        }
+
+        if (valid_count > 0) {
+            float avg_depth = sum_depth / valid_count;
+            ROS_INFO_THROTTLE(1.0, "Average depth from %d valid points: %.3f meters", valid_count, avg_depth);
             
-            // 确保坐标在图像范围内
-            if (x < 0 || x >= depthimage.cols || y < 0 || y >= depthimage.rows) {
-                valid_depth = false;
-                ROS_WARN("Depth sampling point out of bounds: (%d, %d)", x, y);
-                continue;
+            // 计算线速度
+            if(avg_depth > Min_distance) {
+                linear_speed = (avg_depth - Min_distance) * k_linear_speed + h_linear_speed;
+            } else if(avg_depth < Min_distance) {
+                linear_speed = (avg_depth - Min_distance) * k_linear_speed;
+            } else {
+                linear_speed = 0;
             }
+
+            linear_speed = std::max(-Max_linear_speed, std::min(linear_speed, Max_linear_speed));
             
-            dist_val[i] = depthimage.at<float>(y, x);
-            if (std::isnan(dist_val[i]) || std::isinf(dist_val[i])) {
-                valid_depth = false;
-                ROS_WARN("Invalid depth value at point %d: %f", i, dist_val[i]);
-                continue;
-            }
-            ROS_INFO_THROTTLE(1.0, "Depth point %d: %.3f meters", i, dist_val[i]);
-        }
-
-        if (!valid_depth) {
-            ROS_WARN("Invalid depth values detected");
-            return;
-        }
-
-        float distance = 0;
-        int num_depth_points = 5;
-        for(int i = 0; i < 5; i++)
-        {
-            if(dist_val[i] > 0.4 && dist_val[i] < 10.0)  // 改为米为单位的阈值
-                distance += dist_val[i];
-            else {
-                num_depth_points--;
-                ROS_WARN_THROTTLE(1.0, "Invalid depth value at point %d: %.3f", i, dist_val[i]);
-            }
-        }
-
-        if(num_depth_points > 0) {
-            distance /= num_depth_points;
-            ROS_INFO_THROTTLE(1.0, "Average distance: %.3f meters", distance);
+            // 计算角速度
+            int center_x = result.x + result.width/2;
+            float target_center = depthimage.cols / 2.0f;
+            float angle_error = (center_x - target_center) / target_center;
+            rotation_speed = -angle_error * Max_rotation_speed;
+            rotation_speed = std::max(-Max_rotation_speed, std::min(rotation_speed, Max_rotation_speed));
+            
+            ROS_INFO_THROTTLE(1.0, "Control: linear=%.3f m/s, angular=%.3f rad/s", linear_speed, rotation_speed);
         } else {
-            ROS_WARN_THROTTLE(1.0, "No valid depth points found");
-            return;
-        }
-
-        //calculate linear speed
-        if(distance > Min_distance) {
-            linear_speed = (distance-Min_distance) * k_linear_speed + h_linear_speed;
-        } else if(distance < Min_distance) {
-            linear_speed = (distance-Min_distance) *2* k_linear_speed - h_linear_speed;
-        } else {
+            ROS_WARN_THROTTLE(1.0, "No valid depth measurements");
             linear_speed = 0;
-        }
-
-        if(linear_speed > Max_linear_speed) {
-            linear_speed = Max_linear_speed;
-        } else if(linear_speed < -Max_linear_speed) {  // 添加反向速度限制
-            linear_speed = -Max_linear_speed;
-        }
-
-        //calculate rotation speed
-        int center_x = result.x + result.width/2;
-        if(center_x < ERROR_OFFSET_X_left1) 
-            rotation_speed =  Max_rotation_speed;
-        else if(center_x > ERROR_OFFSET_X_left1 && center_x < ERROR_OFFSET_X_left2)
-            rotation_speed = -k_rotation_speed * center_x + h_rotation_speed_left;
-        else if(center_x > ERROR_OFFSET_X_right1 && center_x < ERROR_OFFSET_X_right2)
-            rotation_speed = -k_rotation_speed * center_x + h_rotation_speed_right;
-        else if(center_x > ERROR_OFFSET_X_right2)
-            rotation_speed = -Max_rotation_speed;
-        else 
             rotation_speed = 0;
-
-        std::cout <<  "linear_speed = " << linear_speed << "  rotation_speed = " << rotation_speed << std::endl;
-
-        std::cout <<  dist_val[0]  << " / " <<  dist_val[1] << " / " << dist_val[2] << " / " << dist_val[3] <<  " / " << dist_val[4] << std::endl;
-        std::cout <<  "distance = " << distance << std::endl;
+        }
     }
-
-  	//cv::imshow(DEPTH_WINDOW, depthimage);
-  	cv::waitKey(1);
   }
 };
 
