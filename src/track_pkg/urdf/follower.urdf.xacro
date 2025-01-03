@@ -128,7 +128,7 @@
 
     <!-- Camera Gazebo plugin -->
     <gazebo reference="camera_link">
-        <sensor type="camera" name="camera">
+        <sensor type="camera" name="rgb_camera">
             <update_rate>30.0</update_rate>
             <camera name="head">
                 <horizontal_fov>1.3962634</horizontal_fov>
@@ -166,14 +166,14 @@
 
     <!-- Depth Camera Gazebo plugin -->
     <gazebo reference="camera_link">
-        <sensor type="depth" name="camera">
+        <sensor type="depth" name="depth_camera">
             <update_rate>30.0</update_rate>
-            <camera name="head">
+            <camera name="depth_head">
                 <horizontal_fov>1.3962634</horizontal_fov>
                 <image>
                     <width>800</width>
                     <height>600</height>
-                    <format>R8G8B8</format>
+                    <format>L8</format>
                 </image>
                 <clip>
                     <near>0.02</near>
@@ -192,11 +192,13 @@
                 <imageTopicName>depth/image_raw</imageTopicName>
                 <cameraInfoTopicName>depth/camera_info</cameraInfoTopicName>
                 <depthImageTopicName>depth/image_raw</depthImageTopicName>
-                <depthImageCameraInfoTopicName>depth/camera_info</depthImageCameraInfoTopicName>
+                <depthImageInfoTopicName>depth/camera_info</depthImageInfoTopicName>
                 <pointCloudTopicName>depth/points</pointCloudTopicName>
                 <frameName>camera_link</frameName>
                 <pointCloudCutoff>0.5</pointCloudCutoff>
-                <pointCloudCutoffMax>3.0</pointCloudCutoffMax>
+                <pointCloudCutoffMax>5.0</pointCloudCutoffMax>
+                <rangeMax>5.0</rangeMax>
+                <rangeMin>0.05</rangeMin>
                 <distortionK1>0.0</distortionK1>
                 <distortionK2>0.0</distortionK2>
                 <distortionK3>0.0</distortionK3>

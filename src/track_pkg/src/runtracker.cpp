@@ -16,12 +16,12 @@
 #include "kcftracker.hpp"
 
 static const std::string RGB_WINDOW = "RGB Image window";
-//static const std::string DEPTH_WINDOW = "DEPTH Image window";
+static const std::string DEPTH_WINDOW = "DEPTH Image window";
 
 #define Max_linear_speed 0.5
 #define Min_linear_speed 0
-#define Min_distance 2500
-#define Max_distance 4000
+#define Min_distance 2.5
+#define Max_distance 4.0
 #define Max_rotation_speed 0.75
 
 float linear_speed = 0;
@@ -106,13 +106,13 @@ public:
     pub = nh_.advertise<geometry_msgs::Twist>("cmd_vel", 1000);
 
     cv::namedWindow(RGB_WINDOW);
-    //cv::namedWindow(DEPTH_WINDOW);
+    cv::namedWindow(DEPTH_WINDOW);
   }
 
   ~ImageConverter()
   {
     cv::destroyWindow(RGB_WINDOW);
-    //cv::destroyWindow(DEPTH_WINDOW);
+    cv::destroyWindow(DEPTH_WINDOW);
   }
 
   void imageCb(const sensor_msgs::ImageConstPtr& msg)
@@ -120,36 +120,46 @@ public:
     cv_bridge::CvImagePtr cv_ptr;
     try
     {
-      cv_ptr = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::BGR8);
+        cv_ptr = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::BGR8);
+        ROS_INFO_ONCE("RGB image received successfully");
     }
     catch (cv_bridge::Exception& e)
     {
-      ROS_ERROR("cv_bridge exception: %s", e.what());
-      return;
+        ROS_ERROR("cv_bridge exception: %s", e.what());
+        return;
     }
 
     cv_ptr->image.copyTo(rgbimage);
+
+    if(rgbimage.empty()) {
+        ROS_WARN("Empty RGB image received");
+        return;
+    }
 
     cv::setMouseCallback(RGB_WINDOW, onMouse, 0);
 
     if(bRenewROI)
     {
-        // if (selectRect.width <= 0 || selectRect.height <= 0)
-        // {
-        //     bRenewROI = false;
-        //     //continue;
-        // }
+        if (selectRect.width <= 0 || selectRect.height <= 0)
+        {
+            ROS_WARN("Invalid selection rectangle");
+            bRenewROI = false;
+            return;
+        }
+        ROS_INFO("Initializing tracker with ROI: x=%d, y=%d, w=%d, h=%d", 
+                 selectRect.x, selectRect.y, selectRect.width, selectRect.height);
         tracker.init(selectRect, rgbimage);
         bBeginKCF = true;
         bRenewROI = false;
-        enable_get_depth = false;
+        enable_get_depth = true;
     }
 
     if(bBeginKCF)
     {
         result = tracker.update(rgbimage);
-        cv::rectangle(rgbimage, result, cv::Scalar( 0, 255, 255 ), 1, 8 );
-        enable_get_depth = true;
+        cv::rectangle(rgbimage, result, cv::Scalar(0, 255, 255), 1, 8);
+        ROS_INFO_THROTTLE(1.0, "Tracking box: x=%d, y=%d, w=%d, h=%d", 
+                         result.x, result.y, result.width, result.height);
     }
     else
         cv::rectangle(rgbimage, selectRect, cv::Scalar(255, 0, 0), 2, 8, 0);
@@ -163,74 +173,101 @@ public:
     cv_bridge::CvImagePtr cv_ptr;
     try
     {
-      cv_ptr = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::TYPE_32FC1);
-      cv_ptr->image.copyTo(depthimage);
-      
-      // 添加调试信息
-      if (!depthimage.empty()) {
-        ROS_INFO("Depth image received. Size: %dx%d", depthimage.rows, depthimage.cols);
-      }
+        // 尝试不同的编码格式
+        if (msg->encoding == sensor_msgs::image_encodings::TYPE_16UC1) {
+            cv_ptr = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::TYPE_16UC1);
+            cv_ptr->image.convertTo(depthimage, CV_32FC1, 0.001);  // 转换为米为单位
+            ROS_INFO_ONCE("Using 16UC1 depth encoding");
+        } else {
+            cv_ptr = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::TYPE_32FC1);
+            cv_ptr->image.copyTo(depthimage);
+            ROS_INFO_ONCE("Using 32FC1 depth encoding");
+        }
+        
+        if (!depthimage.empty()) {
+            ROS_INFO_THROTTLE(1.0, "Depth image received. Size: %dx%d, Type: %d", 
+                            depthimage.rows, depthimage.cols, depthimage.type());
+            cv::imshow(DEPTH_WINDOW, depthimage * 0.1);  // 显示深度图像
+            cv::waitKey(1);
+        }
     }
     catch (cv_bridge::Exception& e)
     {
-      ROS_ERROR("Could not convert from '%s' to 'TYPE_32FC1'. Error: %s", msg->encoding.c_str(), e.what());
-      return;
+        ROS_ERROR("Depth image cv_bridge exception: %s", e.what());
+        return;
     }
 
     if(enable_get_depth && !result.empty())
     {
-      // 添加边界检查
-      if (result.x < 0 || result.y < 0 || 
-          result.x + result.width > depthimage.cols || 
-          result.y + result.height > depthimage.rows) {
-        ROS_WARN("Tracking box out of image bounds");
-        return;
-      }
-      dist_val[0] = depthimage.at<float>(result.y+result.height/3 , result.x+result.width/3) ;
-      dist_val[1] = depthimage.at<float>(result.y+result.height/3 , result.x+2*result.width/3) ;
-      dist_val[2] = depthimage.at<float>(result.y+2*result.height/3 , result.x+result.width/3) ;
-      dist_val[3] = depthimage.at<float>(result.y+2*result.height/3 , result.x+2*result.width/3) ;
-      dist_val[4] = depthimage.at<float>(result.y+result.height/2 , result.x+result.width/2) ;
+        // 添加边界检查
+        if (result.x < 0 || result.y < 0 || 
+            result.x + result.width > depthimage.cols || 
+            result.y + result.height > depthimage.rows) {
+            ROS_WARN("Tracking box out of image bounds");
+            return;
+        }
 
-      float distance = 0;
-      int num_depth_points = 5;
-      for(int i = 0; i < 5; i++)
-      {
-          if(dist_val[i]>400 &&dist_val[i]<10000)
-          distance += dist_val[i];
-          else
-          num_depth_points --;
-      }
-      distance /= num_depth_points;
+        // 获取深度值并进行有效性检查
+        for(int i = 0; i < 5; i++) {
+            int y = (i < 2) ? result.y + result.height/3 : 
+                   (i < 4) ? result.y + 2*result.height/3 : 
+                            result.y + result.height/2;
+            int x = (i % 2 == 0) ? result.x + result.width/3 : 
+                   (i % 2 == 1) ? result.x + 2*result.width/3 : 
+                                 result.x + result.width/2;
+            
+            dist_val[i] = depthimage.at<float>(y, x);
+            ROS_INFO_THROTTLE(1.0, "Depth point %d: %.3f meters", i, dist_val[i]);
+        }
 
-      //calculate linear speed
-      if(distance > Min_distance)
-        linear_speed = (distance-Min_distance) * k_linear_speed + h_linear_speed;
-      if(distance < Min_distance)
-        linear_speed = (distance-Min_distance) *2* k_linear_speed - h_linear_speed;
-      else
-        linear_speed = 0;
+        float distance = 0;
+        int num_depth_points = 5;
+        for(int i = 0; i < 5; i++)
+        {
+            if(dist_val[i] > 0.4 && dist_val[i] < 10.0)  // 改为米为单位的阈值
+                distance += dist_val[i];
+            else {
+                num_depth_points--;
+                ROS_WARN_THROTTLE(1.0, "Invalid depth value at point %d: %.3f", i, dist_val[i]);
+            }
+        }
 
-      if(linear_speed > Max_linear_speed)
-        linear_speed = Max_linear_speed;
+        if(num_depth_points > 0) {
+            distance /= num_depth_points;
+            ROS_INFO_THROTTLE(1.0, "Average distance: %.3f meters", distance);
+        } else {
+            ROS_WARN_THROTTLE(1.0, "No valid depth points found");
+            return;
+        }
 
-      //calculate rotation speed
-      int center_x = result.x + result.width/2;
-      if(center_x < ERROR_OFFSET_X_left1) 
-        rotation_speed =  Max_rotation_speed;
-      else if(center_x > ERROR_OFFSET_X_left1 && center_x < ERROR_OFFSET_X_left2)
-        rotation_speed = -k_rotation_speed * center_x + h_rotation_speed_left;
-      else if(center_x > ERROR_OFFSET_X_right1 && center_x < ERROR_OFFSET_X_right2)
-        rotation_speed = -k_rotation_speed * center_x + h_rotation_speed_right;
-      else if(center_x > ERROR_OFFSET_X_right2)
-        rotation_speed = -Max_rotation_speed;
-      else 
-        rotation_speed = 0;
+        //calculate linear speed
+        if(distance > Min_distance)
+            linear_speed = (distance-Min_distance) * k_linear_speed + h_linear_speed;
+        if(distance < Min_distance)
+            linear_speed = (distance-Min_distance) *2* k_linear_speed - h_linear_speed;
+        else
+            linear_speed = 0;
 
-       std::cout <<  "linear_speed = " << linear_speed << "  rotation_speed = " << rotation_speed << std::endl;
+        if(linear_speed > Max_linear_speed)
+            linear_speed = Max_linear_speed;
 
-       std::cout <<  dist_val[0]  << " / " <<  dist_val[1] << " / " << dist_val[2] << " / " << dist_val[3] <<  " / " << dist_val[4] << std::endl;
-       std::cout <<  "distance = " << distance << std::endl;
+        //calculate rotation speed
+        int center_x = result.x + result.width/2;
+        if(center_x < ERROR_OFFSET_X_left1) 
+            rotation_speed =  Max_rotation_speed;
+        else if(center_x > ERROR_OFFSET_X_left1 && center_x < ERROR_OFFSET_X_left2)
+            rotation_speed = -k_rotation_speed * center_x + h_rotation_speed_left;
+        else if(center_x > ERROR_OFFSET_X_right1 && center_x < ERROR_OFFSET_X_right2)
+            rotation_speed = -k_rotation_speed * center_x + h_rotation_speed_right;
+        else if(center_x > ERROR_OFFSET_X_right2)
+            rotation_speed = -Max_rotation_speed;
+        else 
+            rotation_speed = 0;
+
+        std::cout <<  "linear_speed = " << linear_speed << "  rotation_speed = " << rotation_speed << std::endl;
+
+        std::cout <<  dist_val[0]  << " / " <<  dist_val[1] << " / " << dist_val[2] << " / " << dist_val[3] <<  " / " << dist_val[4] << std::endl;
+        std::cout <<  "distance = " << distance << std::endl;
     }
 
   	//cv::imshow(DEPTH_WINDOW, depthimage);

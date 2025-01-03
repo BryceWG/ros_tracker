@@ -47,7 +47,17 @@ target_link_libraries(visual_tracker_node
   ${OpenCV_LIBS}
 )
 
-install(TARGETS visual_tracker_node ${PROJECT_NAME}
+add_executable(kcf_tracker
+  src/runtracker.cpp
+)
+
+target_link_libraries(kcf_tracker
+  ${PROJECT_NAME}
+  ${catkin_LIBRARIES}
+  ${OpenCV_LIBS}
+)
+
+install(TARGETS visual_tracker_node ${PROJECT_NAME} kcf_tracker
   ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
