@@ -259,16 +259,31 @@ public:
             ROS_INFO_ONCE("Using 32FC1 depth encoding");
         }
         
-        // 对深度图像进行阈值处理
-        cv::threshold(depthimage, depthimage, Max_depth_threshold, Max_depth_threshold, cv::THRESH_TRUNC);
-        cv::threshold(depthimage, depthimage, Min_depth_threshold, Min_depth_threshold, cv::THRESH_TOZERO);
+        // 对深度图像进行预处理
+        cv::Mat valid_mask = (depthimage > Min_depth_threshold) & (depthimage < Max_depth_threshold);
+        cv::Mat depth_display;
+        depthimage.copyTo(depth_display, valid_mask);
         
-        if (!depthimage.empty()) {
+        // 无效区域设为最大值
+        depth_display.setTo(Max_depth_threshold, ~valid_mask);
+        
+        if (!depth_display.empty()) {
             // 创建用于显示的深度图像
             cv::Mat display_depth;
-            depthimage.convertTo(display_depth, CV_8UC1, 255.0/Max_depth_threshold);
-            cv::applyColorMap(display_depth, display_depth, cv::COLORMAP_JET);
-            cv::imshow(DEPTH_WINDOW, display_depth);
+            // 归一化到0-1范围
+            depth_display = (depth_display - Min_depth_threshold) / (Max_depth_threshold - Min_depth_threshold);
+            // 转换为8位
+            depth_display.convertTo(display_depth, CV_8UC1, 255.0);
+            // 应用彩色映射
+            cv::Mat color_depth;
+            cv::applyColorMap(display_depth, color_depth, cv::COLORMAP_JET);
+            
+            // 在深度图像上绘制跟踪框
+            if(bBeginKCF && result.width > 0 && result.height > 0) {
+                cv::rectangle(color_depth, result, cv::Scalar(0, 255, 255), 2);
+            }
+            
+            cv::imshow(DEPTH_WINDOW, color_depth);
             cv::waitKey(1);
         }
     }
@@ -290,13 +305,14 @@ public:
         }
 
         // 获取深度值并进行有效性检查
-        bool valid_depth = true;
         float sum_depth = 0;
         int valid_count = 0;
         
         // 在目标框内采样多个点
-        const int sample_rows = 3;
-        const int sample_cols = 3;
+        const int sample_rows = 5;  // 增加采样点数量
+        const int sample_cols = 5;
+        std::vector<float> valid_depths;  // 存储有效的深度值
+        
         for(int i = 0; i < sample_rows; i++) {
             for(int j = 0; j < sample_cols; j++) {
                 int y = result.y + (i + 1) * result.height / (sample_rows + 1);
@@ -305,36 +321,41 @@ public:
                 float depth = depthimage.at<float>(y, x);
                 if (!std::isnan(depth) && !std::isinf(depth) && 
                     depth >= Min_depth_threshold && depth <= Max_depth_threshold) {
+                    valid_depths.push_back(depth);
                     sum_depth += depth;
                     valid_count++;
-                    ROS_INFO_THROTTLE(1.0, "Valid depth at (%d,%d): %.3f meters", x, y, depth);
                 }
             }
         }
 
         if (valid_count > 0) {
-            float avg_depth = sum_depth / valid_count;
-            ROS_INFO_THROTTLE(1.0, "Average depth from %d valid points: %.3f meters", valid_count, avg_depth);
+            // 计算中值深度，避免异常值影响
+            std::sort(valid_depths.begin(), valid_depths.end());
+            float median_depth = valid_depths[valid_count/2];
             
-            // 计算线速度
-            if(avg_depth > Min_distance) {
-                linear_speed = (avg_depth - Min_distance) * k_linear_speed + h_linear_speed;
-            } else if(avg_depth < Min_distance) {
-                linear_speed = (avg_depth - Min_distance) * k_linear_speed;
+            ROS_INFO_THROTTLE(1.0, "Median depth from %d valid points: %.3f meters", 
+                            valid_count, median_depth);
+            
+            // 使用中值深度进行控制
+            if(median_depth > Min_distance) {
+                linear_speed = (median_depth - Min_distance) * k_linear_speed + h_linear_speed;
+            } else if(median_depth < Min_distance) {
+                linear_speed = (median_depth - Min_distance) * k_linear_speed;
             } else {
                 linear_speed = 0;
             }
 
-            linear_speed = std::max(-static_cast<float>(Max_linear_speed), std::min(linear_speed, static_cast<float>(Max_linear_speed)));
+            linear_speed = std::max(-Max_linear_speed, std::min(linear_speed, Max_linear_speed));
             
             // 计算角速度
             int center_x = result.x + result.width/2;
             float target_center = depthimage.cols / 2.0f;
             float angle_error = (center_x - target_center) / target_center;
             rotation_speed = -angle_error * Max_rotation_speed;
-            rotation_speed = std::max(-static_cast<float>(Max_rotation_speed), std::min(rotation_speed, static_cast<float>(Max_rotation_speed)));
+            rotation_speed = std::max(-Max_rotation_speed, std::min(rotation_speed, Max_rotation_speed));
             
-            ROS_INFO_THROTTLE(1.0, "Control: linear=%.3f m/s, angular=%.3f rad/s", linear_speed, rotation_speed);
+            ROS_INFO_THROTTLE(1.0, "Control: linear=%.3f m/s, angular=%.3f rad/s", 
+                            linear_speed, rotation_speed);
         } else {
             ROS_WARN_THROTTLE(1.0, "No valid depth measurements");
             linear_speed = 0;

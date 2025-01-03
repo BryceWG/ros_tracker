@@ -18,14 +18,14 @@ KCFTracker::KCFTracker(bool hog, bool fixed_window, bool multiscale, bool lab)
     // 初始化跟踪状态
     scale = 1.0f;
     
-    // 设置默认参数
+    // 修改默认参数以提高稳定性
     lambda = 0.0001f;
-    padding = 2.5f;
-    output_sigma_factor = 0.125f;
-    scale_step = 1.05f;
+    padding = 2.0f;  // 减小padding
+    output_sigma_factor = 0.1f;
+    scale_step = 1.02f;  // 减小尺度变化步长
     scale_weight = 0.95f;
-    interp_factor = 0.075f;
-    sigma = 0.6f;
+    interp_factor = 0.02f;  // 减小更新率
+    sigma = 0.2f;
     cell_size = 4;
     template_size = 96;
 }
@@ -235,19 +235,26 @@ cv::Point2f KCFTracker::detect(cv::Mat z, cv::Mat x, float &peak_value)
         
         peak_value = (float)maxVal;
 
-        // 计算搜索窗口的中心
-        Point2f search_center(pos.x, pos.y);
-        
+        // 如果相似度太低，返回上一次位置
+        if (peak_value < 0.1f) {
+            return pos;
+        }
+
         // 计算相对位移
-        float dx = (maxLoc.x - k.cols/2.0f) * (target_size.width * padding / template_size);
-        float dy = (maxLoc.y - k.rows/2.0f) * (target_size.height * padding / template_size);
+        float dx = (maxLoc.x - k.cols/2.0f) * (target_size.width / template_size);
+        float dy = (maxLoc.y - k.rows/2.0f) * (target_size.height / template_size);
+        
+        // 添加位移限制
+        float max_displacement = target_size.width * 0.2f;  // 限制最大位移为目标宽度的20%
+        dx = std::max(-max_displacement, std::min(dx, max_displacement));
+        dy = std::max(-max_displacement, std::min(dy, max_displacement));
         
         // 返回新的目标中心位置
-        return Point2f(search_center.x + dx, search_center.y + dy);
+        return Point2f(pos.x + dx, pos.y + dy);
     } catch (const cv::Exception& e) {
         std::cerr << "Error in detection: " << e.what() << std::endl;
         peak_value = 0;
-        return pos;  // 返回上一次的位置
+        return pos;
     }
 }
 
