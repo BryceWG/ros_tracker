@@ -99,9 +99,9 @@ public:
     : it_(nh_)
   {
     // Subscrive to input video feed and publish output video feed
-    image_sub_ = it_.subscribe("/kinect2/sd/image_color_rect", 1, 
+    image_sub_ = it_.subscribe("/follower/camera/rgb/image_raw", 1, 
       &ImageConverter::imageCb, this);
-    depth_sub_ = it_.subscribe("/kinect2/sd/image_depth", 1, 
+    depth_sub_ = it_.subscribe("/follower/camera/depth/image_raw", 1, 
       &ImageConverter::depthCb, this);
     pub = nh_.advertise<geometry_msgs::Twist>("cmd_vel", 1000);
 
@@ -160,19 +160,32 @@ public:
 
   void depthCb(const sensor_msgs::ImageConstPtr& msg)
   {
-  	cv_bridge::CvImagePtr cv_ptr;
-  	try
-  	{
-  		cv_ptr = cv_bridge::toCvCopy(msg,sensor_msgs::image_encodings::TYPE_32FC1);
-  		cv_ptr->image.copyTo(depthimage);
-  	}
-  	catch (cv_bridge::Exception& e)
-  	{
-  		ROS_ERROR("Could not convert from '%s' to 'TYPE_32FC1'.", msg->encoding.c_str());
-  	}
-
-    if(enable_get_depth)
+    cv_bridge::CvImagePtr cv_ptr;
+    try
     {
+      cv_ptr = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::TYPE_32FC1);
+      cv_ptr->image.copyTo(depthimage);
+      
+      // 添加调试信息
+      if (!depthimage.empty()) {
+        ROS_INFO("Depth image received. Size: %dx%d", depthimage.rows, depthimage.cols);
+      }
+    }
+    catch (cv_bridge::Exception& e)
+    {
+      ROS_ERROR("Could not convert from '%s' to 'TYPE_32FC1'. Error: %s", msg->encoding.c_str(), e.what());
+      return;
+    }
+
+    if(enable_get_depth && !result.empty())
+    {
+      // 添加边界检查
+      if (result.x < 0 || result.y < 0 || 
+          result.x + result.width > depthimage.cols || 
+          result.y + result.height > depthimage.rows) {
+        ROS_WARN("Tracking box out of image bounds");
+        return;
+      }
       dist_val[0] = depthimage.at<float>(result.y+result.height/3 , result.x+result.width/3) ;
       dist_val[1] = depthimage.at<float>(result.y+result.height/3 , result.x+2*result.width/3) ;
       dist_val[2] = depthimage.at<float>(result.y+2*result.height/3 , result.x+result.width/3) ;

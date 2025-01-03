@@ -16,27 +16,9 @@
     </node>
 
     <!-- 启动视觉跟踪节点 -->
-    <node pkg="track_pkg" type="visual_tracker_node" name="visual_tracker" output="screen">
-        <!-- 跟踪参数配置 -->
-        <param name="max_linear_speed" value="0.5"/>
-        <param name="min_linear_speed" value="0.0"/>
-        <param name="min_distance" value="2.5"/>  <!-- 单位：米 -->
-        <param name="max_distance" value="4.0"/>  <!-- 单位：米 -->
-        <param name="max_rotation_speed" value="0.75"/>
-        <param name="k_rotation_speed" value="0.01"/>
-
+    <node pkg="track_pkg" type="kcf_tracker" name="kcf_tracker" output="screen">
         <!-- 话题重映射 -->
-        <remap from="/camera/rgb/image_raw" to="/follower/camera/rgb/image_raw"/>
-        <remap from="/camera/depth/image_raw" to="/follower/camera/depth/image_raw"/>
-        <remap from="/cmd_vel" to="/follower/cmd_vel"/>
+        <remap from="cmd_vel" to="/follower/cmd_vel"/>
     </node>
 
-    <!-- 启动图像显示窗口 -->
-    <node pkg="image_view" type="image_view" name="rgb_image_view" output="screen">
-        <remap from="image" to="/follower/camera/rgb/image_raw"/>
-        <param name="autosize" value="true"/>
-        <param name="window_name" value="Tracking Window"/>
-        <param name="mouse_enabled" value="true"/>
-        <param name="gui" value="true"/>
-    </node>
 </launch> 
