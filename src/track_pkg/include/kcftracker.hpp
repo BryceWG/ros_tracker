@@ -42,6 +42,9 @@ private:
     // 尺度估计
     float getScale(const cv::Mat &image, const cv::Point2f &pos, const cv::Size &base_size);
 
+    // 亚像素峰值检测
+    cv::Point2f getSubPixelPeak(const cv::Mat& response, const cv::Point& peak_loc);
+
 private:
     // 配置参数
     bool HOG;
@@ -67,6 +70,7 @@ private:
     float output_sigma_factor;
     float scale_step;
     float scale_weight;
+    float detection_threshold;  // 检测阈值
 };
 
 #endif
