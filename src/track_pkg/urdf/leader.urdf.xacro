@@ -7,6 +7,9 @@
     <xacro:property name="wheel_radius" value="0.08"/>
     <xacro:property name="wheel_width" value="0.04"/>
     <xacro:property name="wheel_separation_length" value="0.30"/>
+    <xacro:property name="marker_width" value="0.2"/>
+    <xacro:property name="marker_height" value="0.2"/>
+    <xacro:property name="marker_thickness" value="0.01"/>
 
     <!-- Base link -->
     <link name="base_link">
@@ -14,8 +17,8 @@
             <geometry>
                 <box size="${base_length} ${base_width} ${base_height}"/>
             </geometry>
-            <material name="red">
-                <color rgba="1 0 0 1"/>
+            <material name="bright_blue">
+                <color rgba="0 0.5 1 1"/>
             </material>
         </visual>
         <collision>
@@ -28,6 +31,57 @@
             <inertia ixx="0.01" ixy="0" ixz="0" iyy="0.01" iyz="0" izz="0.01"/>
         </inertial>
     </link>
+
+    <!-- 添加后部标记板 -->
+    <link name="marker_board">
+        <visual>
+            <geometry>
+                <box size="${marker_thickness} ${marker_width} ${marker_height}"/>
+            </geometry>
+            <material name="checker_pattern">
+                <color rgba="1 1 0 1"/>  <!-- 黄色，更容易被识别 -->
+            </material>
+        </visual>
+        <collision>
+            <geometry>
+                <box size="${marker_thickness} ${marker_width} ${marker_height}"/>
+            </geometry>
+        </collision>
+        <inertial>
+            <mass value="0.1"/>
+            <inertia ixx="0.001" ixy="0" ixz="0" iyy="0.001" iyz="0" izz="0.001"/>
+        </inertial>
+    </link>
+
+    <!-- 标记板关节 -->
+    <joint name="marker_board_joint" type="fixed">
+        <parent link="base_link"/>
+        <child link="marker_board"/>
+        <origin xyz="${-base_length/2 - marker_thickness/2} 0 ${base_height/2}" rpy="0 0 0"/>
+    </joint>
+
+    <!-- 添加顶部标记图案 -->
+    <link name="top_pattern">
+        <visual>
+            <geometry>
+                <box size="${marker_width} ${marker_width} ${marker_thickness}"/>
+            </geometry>
+            <material name="pattern">
+                <color rgba="1 0.8 0 1"/>  <!-- 金黄色 -->
+            </material>
+        </visual>
+        <inertial>
+            <mass value="0.01"/>
+            <inertia ixx="0.001" ixy="0" ixz="0" iyy="0.001" iyz="0" izz="0.001"/>
+        </inertial>
+    </link>
+
+    <!-- 顶部图案关节 -->
+    <joint name="top_pattern_joint" type="fixed">
+        <parent link="base_link"/>
+        <child link="top_pattern"/>
+        <origin xyz="0 0 ${base_height/2 + marker_thickness/2}" rpy="0 0 0"/>
+    </joint>
 
     <!-- Wheel Macro -->
     <xacro:macro name="wheel" params="prefix suffix x_reflect y_reflect">
@@ -75,9 +129,18 @@
 
     <!-- Gazebo materials -->
     <gazebo reference="base_link">
-        <material>Gazebo/Red</material>
+        <material>Gazebo/Blue</material>
         <mu1>0.2</mu1>
         <mu2>0.2</mu2>
+    </gazebo>
+
+    <!-- 为新添加的部件设置Gazebo材质 -->
+    <gazebo reference="marker_board">
+        <material>Gazebo/Yellow</material>
+    </gazebo>
+
+    <gazebo reference="top_pattern">
+        <material>Gazebo/Yellow</material>
     </gazebo>
 
     <!-- Gazebo plugin -->

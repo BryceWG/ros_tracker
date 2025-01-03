@@ -12,22 +12,23 @@ KCFTracker::KCFTracker(bool hog, bool fixed_window, bool multiscale, bool lab)
     // 初始化配置参数
     HOG = hog;
     FIXED_WINDOW = fixed_window;
-    MULTISCALE = multiscale;
+    MULTISCALE = false; // 关闭多尺度更新以减少漂移
     LAB = lab;
     
     // 初始化跟踪状态
     scale = 1.0f;
     
-    // 修改默认参数以提高稳定性
+    // 优化参数以提高稳定性
     lambda = 0.0001f;
-    padding = 2.0f;  // 减小padding
+    padding = 1.5f;  // 减小搜索区域
     output_sigma_factor = 0.1f;
-    scale_step = 1.02f;  // 减小尺度变化步长
+    scale_step = 1.01f;  // 进一步减小尺度变化步长
     scale_weight = 0.95f;
-    interp_factor = 0.02f;  // 减小更新率
+    interp_factor = 0.01f;  // 减小更新率以提高稳定性
     sigma = 0.2f;
     cell_size = 4;
     template_size = 96;
+    detection_threshold = 0.4f;  // 提高检测阈值
 }
 
 void KCFTracker::init(cv::Rect bbox, cv::Mat image)
@@ -140,7 +141,6 @@ void KCFTracker::getFeatures(const cv::Mat & image, const cv::Rect & roi, cv::Ma
 void KCFTracker::getHOGFeatures(const cv::Mat & image, const cv::Rect & roi, cv::Mat & features)
 {
     try {
-        // 简化版HOG特征提取
         Mat gray;
         if (image.channels() > 1) {
             cvtColor(image, gray, COLOR_BGR2GRAY);
@@ -148,17 +148,56 @@ void KCFTracker::getHOGFeatures(const cv::Mat & image, const cv::Rect & roi, cv:
             gray = image.clone();
         }
         
+        // 使用更强的预处理
+        GaussianBlur(gray, gray, Size(3,3), 0);
+        
         // 计算梯度
         Mat dx, dy;
-        Sobel(gray, dx, CV_32F, 1, 0);
-        Sobel(gray, dy, CV_32F, 0, 1);
+        Sobel(gray, dx, CV_32F, 1, 0, 3);
+        Sobel(gray, dy, CV_32F, 0, 1, 3);
         
         // 计算梯度幅值和方向
         Mat magnitude, angle;
         cartToPolar(dx, dy, magnitude, angle);
         
-        // 确保特征维度正确
-        features = magnitude.reshape(1, magnitude.rows * magnitude.cols);
+        // 归一化梯度幅值
+        normalize(magnitude, magnitude, 0, 1, NORM_MINMAX);
+        
+        // 计算HOG特征
+        const int n_bins = 9;
+        const float angle_step = 180.0f / n_bins;
+        
+        vector<Mat> hist_features;
+        for(int i = 0; i < n_bins; i++) {
+            Mat bin = Mat::zeros(magnitude.size(), CV_32F);
+            float angle_low = i * angle_step;
+            float angle_high = (i + 1) * angle_step;
+            
+            for(int y = 0; y < angle.rows; y++) {
+                for(int x = 0; x < angle.cols; x++) {
+                    float ang = angle.at<float>(y,x) * 180.0f / CV_PI;
+                    if(ang < 0) ang += 180.0f;
+                    
+                    if(ang >= angle_low && ang < angle_high) {
+                        bin.at<float>(y,x) = magnitude.at<float>(y,x);
+                    }
+                }
+            }
+            hist_features.push_back(bin);
+        }
+        
+        // 合并特征
+        Mat all_features;
+        for(const Mat& hist : hist_features) {
+            Mat feat = hist.reshape(1, 1);
+            if(all_features.empty()) {
+                all_features = feat;
+            } else {
+                hconcat(all_features, feat, all_features);
+            }
+        }
+        
+        features = all_features;
     } catch (const cv::Exception& e) {
         std::cerr << "Error in HOG feature extraction: " << e.what() << std::endl;
         features = Mat();
@@ -170,7 +209,10 @@ void KCFTracker::getColorFeatures(const cv::Mat & image, const cv::Rect & roi, c
     try {
         Mat lab;
         if (image.channels() == 3) {
-            cvtColor(image, lab, COLOR_BGR2Lab);
+            // 添加高斯模糊以减少噪声
+            Mat blurred;
+            GaussianBlur(image, blurred, Size(3,3), 0);
+            cvtColor(blurred, lab, COLOR_BGR2Lab);
         } else {
             lab = image.clone();
         }
@@ -178,6 +220,12 @@ void KCFTracker::getColorFeatures(const cv::Mat & image, const cv::Rect & roi, c
         // 分离通道
         vector<Mat> channels;
         split(lab, channels);
+        
+        // 对每个通道进行直方图均衡化和归一化
+        for(auto& channel : channels) {
+            // 归一化到0-1范围
+            normalize(channel, channel, 0, 1, NORM_MINMAX);
+        }
         
         // 合并所有通道的特征
         Mat all_features;
@@ -210,13 +258,25 @@ void KCFTracker::train(cv::Mat x, float interp_factor)
             if (x.size() != tmpl.size()) {
                 resize(x, x, tmpl.size());
             }
-            tmpl = tmpl * (1 - interp_factor) + x * interp_factor;
-            alphaf = alphaf * (1 - interp_factor) + k * interp_factor;
+            
+            // 计算新模板与当前模板的相似度
+            Mat correlation;
+            matchTemplate(x, tmpl, correlation, TM_CCORR_NORMED);
+            double similarity;
+            minMaxLoc(correlation, nullptr, &similarity);
+            
+            // 如果相似度太低，减小更新率以防止模型漂移
+            float current_interp_factor = similarity > 0.8 ? interp_factor : interp_factor * 0.5f;
+            
+            tmpl = tmpl * (1 - current_interp_factor) + x * current_interp_factor;
+            alphaf = alphaf * (1 - current_interp_factor) + k * current_interp_factor;
         }
     } catch (const cv::Exception& e) {
         std::cerr << "Error in training: " << e.what() << std::endl;
     }
 }
+
+float detection_threshold = 0.3f; 
 
 cv::Point2f KCFTracker::detect(cv::Mat z, cv::Mat x, float &peak_value)
 {
@@ -234,28 +294,68 @@ cv::Point2f KCFTracker::detect(cv::Mat z, cv::Mat x, float &peak_value)
         minMaxLoc(k, &minVal, &maxVal, &minLoc, &maxLoc);
         
         peak_value = (float)maxVal;
-
-        // 如果相似度太低，返回上一次位置
-        if (peak_value < 0.1f) {
+        
+        // 增强的跟踪质量评估
+        Mat response_map;
+        normalize(k, response_map, 0, 1, NORM_MINMAX);
+        
+        // 计算响应图的峰值与均值比
+        Scalar mean_val = mean(response_map);
+        float psr = (peak_value - mean_val[0]) / mean_val[0];  // PSR: Peak to Sidelobe Ratio
+        
+        if (peak_value < detection_threshold || psr < 2.0) {
+            // 当相似度太低或PSR太小时，不更新位置
             return pos;
         }
 
-        // 计算相对位移
-        float dx = (maxLoc.x - k.cols/2.0f) * (target_size.width / template_size);
-        float dy = (maxLoc.y - k.rows/2.0f) * (target_size.height / template_size);
+        // 计算亚像素级别的峰值位置
+        Point2f subpixel_delta = getSubPixelPeak(k, maxLoc);
         
-        // 添加位移限制
-        float max_displacement = target_size.width * 0.2f;  // 限制最大位移为目标宽度的20%
+        // 计算相对位移
+        float dx = (maxLoc.x + subpixel_delta.x - k.cols/2.0f) * (target_size.width / template_size);
+        float dy = (maxLoc.y + subpixel_delta.y - k.rows/2.0f) * (target_size.height / template_size);
+        
+        // 添加位移限制和平滑
+        float max_displacement = target_size.width * 0.15f;  // 限制最大位移为目标宽度的15%
         dx = std::max(-max_displacement, std::min(dx, max_displacement));
         dy = std::max(-max_displacement, std::min(dy, max_displacement));
         
-        // 返回新的目标中心位置
+        // 使用指数平滑来平滑位移
+        static float smooth_factor = 0.6f;
+        static float prev_dx = 0, prev_dy = 0;
+        dx = smooth_factor * dx + (1 - smooth_factor) * prev_dx;
+        dy = smooth_factor * dy + (1 - smooth_factor) * prev_dy;
+        prev_dx = dx;
+        prev_dy = dy;
+        
         return Point2f(pos.x + dx, pos.y + dy);
     } catch (const cv::Exception& e) {
         std::cerr << "Error in detection: " << e.what() << std::endl;
-        peak_value = 0;
         return pos;
     }
+}
+
+Point2f KCFTracker::getSubPixelPeak(const Mat& response, const Point& peak_loc)
+{
+    // 获取峰值周围的3x3区域
+    int x = peak_loc.x;
+    int y = peak_loc.y;
+    
+    // 确保我们有足够的边界
+    if (x < 1 || x >= response.cols-1 || y < 1 || y >= response.rows-1)
+        return Point2f(0,0);
+    
+    // 拟合二次函数进行亚像素插值
+    float dx = (response.at<float>(y, x+1) - response.at<float>(y, x-1)) * 0.5f;
+    float dy = (response.at<float>(y+1, x) - response.at<float>(y-1, x)) * 0.5f;
+    
+    float dxx = response.at<float>(y, x+1) + response.at<float>(y, x-1) - 2.0f * response.at<float>(y, x);
+    float dyy = response.at<float>(y+1, x) + response.at<float>(y-1, x) - 2.0f * response.at<float>(y, x);
+    
+    if (dxx == 0 || dyy == 0)
+        return Point2f(0,0);
+    
+    return Point2f(-dx/dxx, -dy/dyy);
 }
 
 cv::Mat KCFTracker::getSubWindow(const cv::Mat &image, const cv::Point2f &center, const cv::Size &size)
