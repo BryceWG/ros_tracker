@@ -52,10 +52,10 @@ bool bBeginKCF = false;
 bool enable_get_depth = false;
 
 bool HOG = true;
-bool FIXEDWINDOW = false;
+bool FIXEDWINDOW = true;
 bool MULTISCALE = true;
-bool SILENT = true;
-bool LAB = false;
+bool SILENT = false;
+bool LAB = true;
 
 // Create KCFTracker object
 KCFTracker tracker(HOG, FIXEDWINDOW, MULTISCALE, LAB);
@@ -160,9 +160,12 @@ public:
 
     if(bRenewROI)
     {
-        if (selectRect.width <= 0 || selectRect.height <= 0)
+        if (selectRect.width <= 0 || selectRect.height <= 0 ||
+            selectRect.x < 0 || selectRect.y < 0 ||
+            selectRect.x + selectRect.width > rgbimage.cols ||
+            selectRect.y + selectRect.height > rgbimage.rows)
         {
-            ROS_WARN("Invalid selection rectangle");
+            ROS_WARN("Invalid selection rectangle or out of bounds");
             bRenewROI = false;
             return;
         }
@@ -177,6 +180,19 @@ public:
     if(bBeginKCF)
     {
         result = tracker.update(rgbimage);
+        
+        // 检查跟踪框是否有效
+        if (result.width <= 0 || result.height <= 0 ||
+            result.x < 0 || result.y < 0 ||
+            result.x + result.width > rgbimage.cols ||
+            result.y + result.height > rgbimage.rows)
+        {
+            ROS_WARN("Tracking failed or out of bounds, reinitialize tracking");
+            bBeginKCF = false;
+            enable_get_depth = false;
+            return;
+        }
+        
         cv::rectangle(display_image, result, cv::Scalar(0, 255, 255), 2, 8);
         ROS_INFO_THROTTLE(1.0, "Tracking box: x=%d, y=%d, w=%d, h=%d", 
                          result.x, result.y, result.width, result.height);
@@ -226,11 +242,13 @@ public:
         if (result.x < 0 || result.y < 0 || 
             result.x + result.width > depthimage.cols || 
             result.y + result.height > depthimage.rows) {
-            ROS_WARN("Tracking box out of image bounds");
+            ROS_WARN("Tracking box out of image bounds in depth image");
+            enable_get_depth = false;
             return;
         }
 
         // 获取深度值并进行有效性检查
+        bool valid_depth = true;
         for(int i = 0; i < 5; i++) {
             int y = (i < 2) ? result.y + result.height/3 : 
                    (i < 4) ? result.y + 2*result.height/3 : 
@@ -239,8 +257,25 @@ public:
                    (i % 2 == 1) ? result.x + 2*result.width/3 : 
                                  result.x + result.width/2;
             
+            // 确保坐标在图像范围内
+            if (x < 0 || x >= depthimage.cols || y < 0 || y >= depthimage.rows) {
+                valid_depth = false;
+                ROS_WARN("Depth sampling point out of bounds: (%d, %d)", x, y);
+                continue;
+            }
+            
             dist_val[i] = depthimage.at<float>(y, x);
+            if (std::isnan(dist_val[i]) || std::isinf(dist_val[i])) {
+                valid_depth = false;
+                ROS_WARN("Invalid depth value at point %d: %f", i, dist_val[i]);
+                continue;
+            }
             ROS_INFO_THROTTLE(1.0, "Depth point %d: %.3f meters", i, dist_val[i]);
+        }
+
+        if (!valid_depth) {
+            ROS_WARN("Invalid depth values detected");
+            return;
         }
 
         float distance = 0;
