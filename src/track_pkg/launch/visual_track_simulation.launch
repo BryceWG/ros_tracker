@@ -3,6 +3,11 @@
     <!-- 设置ROS日志级别 -->
     <env name="ROSCONSOLE_CONFIG_FILE" 
          value="$(find track_pkg)/config/rosconsole.config"/>
+         
+    <!-- 设置显示相关的环境变量 -->
+    <env name="DISPLAY" value=":0"/>
+    <env name="QT_X11_NO_MITSHM" value="1"/>
+    <env name="OPENCV_WINDOW_NORMAL" value="1"/>
 
     <!-- 启动Gazebo仿真环境 -->
     <include file="$(find track_pkg)/launch/gazebo_simulation.launch"/>
@@ -30,8 +35,4 @@
         <remap from="/camera/depth/image_raw" to="/follower/camera/depth/image_raw"/>
         <remap from="/cmd_vel" to="/follower/cmd_vel"/>
     </node>
-
-    <!-- 启动RViz可视化 -->
-    <node pkg="rviz" type="rviz" name="rviz" 
-          args="-d $(find track_pkg)/rviz/visual_track.rviz"/>
 </launch> 

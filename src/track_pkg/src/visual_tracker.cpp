@@ -29,11 +29,24 @@ VisualTracker::VisualTracker() : it_(nh_), tracker_(nullptr)
         bool LAB = true;
         tracker_ = new KCFTracker(HOG, FIXEDWINDOW, MULTISCALE, LAB);
 
+        // 确保DISPLAY环境变量已设置
+        if (getenv("DISPLAY") == nullptr) {
+            ROS_ERROR("DISPLAY environment variable not set");
+            throw std::runtime_error("DISPLAY not set");
+        }
+
         // 创建窗口并设置鼠标回调
-        cv::destroyAllWindows();  // 确保没有残留的窗口
-        cv::namedWindow("Tracking", cv::WINDOW_NORMAL);
-        cv::resizeWindow("Tracking", 640, 480);
-        cv::setMouseCallback("Tracking", onMouseWrapper, this);
+        try {
+            cv::destroyWindow("Tracking");  // 只清理特定窗口
+            cv::namedWindow("Tracking", cv::WINDOW_NORMAL);
+            cv::resizeWindow("Tracking", 640, 480);
+            cv::setMouseCallback("Tracking", onMouseWrapper, this);
+            cv::waitKey(1);  // 给窗口系统一些时间来创建窗口
+        }
+        catch (const cv::Exception& e) {
+            ROS_ERROR("Failed to create OpenCV window: %s", e.what());
+            throw;
+        }
         
         ROS_INFO("Visual tracker initialized. Please select a target in the window.");
     }
@@ -114,6 +127,11 @@ void VisualTracker::rgbCallback(const sensor_msgs::ImageConstPtr& msg)
         rgb_image_ = cv_ptr->image.clone();
         cv::Mat display_image = rgb_image_.clone();
 
+        // 确保图像大小合适
+        if (display_image.cols > 1920 || display_image.rows > 1080) {
+            cv::resize(display_image, display_image, cv::Size(1280, 720));
+        }
+
         if (begin_track_)
         {
             if (renew_roi_)
@@ -189,12 +207,22 @@ void VisualTracker::rgbCallback(const sensor_msgs::ImageConstPtr& msg)
             cv::rectangle(display_image, select_rect_, cv::Scalar(255, 0, 0), 2);
         }
 
+        // 添加提示信息
+        cv::putText(display_image, "Press ESC to exit", cv::Point(10, display_image.rows - 20),
+                    cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 255, 0), 1);
+
         showDebugInfo(display_image);
-        cv::imshow("Tracking", display_image);
-        int key = cv::waitKey(1);
-        if (key == 27) // ESC键
-        {
-            ros::shutdown();
+        
+        try {
+            cv::imshow("Tracking", display_image);
+            int key = cv::waitKey(1);
+            if (key == 27) // ESC键
+            {
+                ros::shutdown();
+            }
+        }
+        catch (const cv::Exception& e) {
+            ROS_ERROR("Failed to show image: %s", e.what());
         }
     }
     catch (const cv_bridge::Exception& e)
