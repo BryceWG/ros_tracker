@@ -1,0 +1,73 @@
+<?xml version="1.0"?>
+<launch>
+    <!-- 设置使用仿真时间 -->
+    <param name="/use_sim_time" value="true" />
+
+    <!-- 启动Gazebo仿真环境 -->
+    <include file="$(find gazebo_ros)/launch/empty_world.launch">
+        <arg name="world_name" value="$(find track_pkg)/worlds/track_world.world"/>
+        <arg name="paused" value="false"/>
+        <arg name="gui" value="true"/>
+        <arg name="use_sim_time" value="true"/>
+        <arg name="headless" value="false"/>
+        <arg name="debug" value="false"/>
+        <!-- 修改显示相关参数 -->
+        <env name="GAZEBO_MODEL_PATH" value="$(find track_pkg)/models:$(optenv GAZEBO_MODEL_PATH)"/>
+        <env name="DISPLAY" value=":0"/>
+        <env name="LIBGL_ALWAYS_SOFTWARE" value="1"/>
+        <env name="SVGA_VGPU10" value="0"/>
+        <env name="GAZEBO_GPU_RAY" value="0"/>
+        <!-- 降低性能以提高稳定性 -->
+        <env name="OGRE_RTT_MODE" value="Copy"/>
+        <env name="GAZEBO_CMT_THREAD_COUNT" value="1"/>
+    </include>
+
+    <!-- 目标车配置 -->
+    <group ns="leader">
+        <param name="robot_description" 
+               command="$(find xacro)/xacro $(find track_pkg)/urdf/car.urdf.xacro robot_type:=leader" />
+        
+        <!-- 生成目标车辆 -->
+        <node name="spawn_leader" pkg="gazebo_ros" type="spawn_model" respawn="false" output="screen"
+              args="-urdf 
+                    -param robot_description
+                    -model leader
+                    -x 0.0 -y 0.0 -z 0.05"/>
+
+        <!-- 键盘控制节点 -->
+        <node pkg="teleop_twist_keyboard" type="teleop_twist_keyboard.py" name="teleop" output="screen">
+            <remap from="cmd_vel" to="cmd_vel"/>
+            <param name="repeat_rate" value="50.0"/>
+            <param name="scale_linear" value="0.5"/>
+            <param name="scale_angular" value="1.5"/>
+        </node>
+
+        <!-- 状态发布 -->
+        <node name="robot_state_publisher" pkg="robot_state_publisher" type="robot_state_publisher"/>
+    </group>
+
+    <!-- 跟踪车配置 -->
+    <group ns="follower">
+        <param name="robot_description" 
+               command="$(find xacro)/xacro $(find track_pkg)/urdf/car.urdf.xacro robot_type:=follower" />
+        
+        <!-- 生成跟踪车辆 -->
+        <node name="spawn_follower" pkg="gazebo_ros" type="spawn_model" respawn="false" output="screen"
+              args="-urdf 
+                    -param robot_description
+                    -model follower
+                    -x -2.0 -y 0.0 -z 0.05"/>
+
+        <!-- 状态发布 -->
+        <node name="robot_state_publisher" pkg="robot_state_publisher" type="robot_state_publisher"/>
+
+        <!-- 视觉跟踪节点 -->
+        <node pkg="track_pkg" type="kcf_tracker" name="kcf_tracker" output="screen">
+            <remap from="cmd_vel" to="cmd_vel"/>
+        </node>
+    </group>
+
+    <!-- 启动rviz可视化 -->
+    <node name="rviz" pkg="rviz" type="rviz" 
+          args="-d $(find track_pkg)/rviz/track.rviz"/>
+</launch> 
